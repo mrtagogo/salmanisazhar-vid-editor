@@ -21,6 +21,7 @@ from .lib.config import ENGINE_ROOT, load_config
 from .lib.faces import FaceTrackError
 from .lib.jsonio import read_json
 from .lib.matte import MatteError
+from .stages.s08_rough_cut import ApprovalError
 from .lib.media import MediaToolError
 from .lib.paths import INPUT_DIR, ProjectPaths, project_paths
 from .stages import assets as stage_assets
@@ -32,13 +33,18 @@ from .stages import (
     s05_report,
     s06_face_track,
     s07_person_matte,
+    s08_rough_cut,
 )
 
 # The video stages run last: they need only the video, nothing the audio
 # branch produces, and they are the slowest. Putting them after the report
 # means the approval checkpoint is ready to read while frames are still being
 # chewed.
-STAGE_ORDER = ("ingest", "assets", "transcribe", "silence", "edl", "report", "track", "matte")
+# "cut" is deliberately NOT in the default run. Everything before it is
+# analysis and can be re-run freely; cutting needs a human approval first,
+# so it is asked for by name: --only cut
+STAGE_ORDER = ("ingest", "assets", "transcribe", "silence", "edl", "report", "track", "matte", "cut")
+DEFAULT_STAGES = STAGE_ORDER[:-1]
 
 MEDIA_SUFFIXES = {".mp4", ".mov", ".mkv", ".m4v", ".avi", ".mts", ".webm"}
 
@@ -120,6 +126,11 @@ def _summarize(stage: str, result: dict[str, Any]) -> str:
             f"{result['frames']} frames, coverage {stats['coverage'] * 100:.1f}%, "
             f"{stats['gapCount']} gap(s), mean score {stats['meanScore']}"
         )
+    if stage == "cut":
+        return (
+            f"{result['roughCut']} — {result['actualDurationSeconds']}s "
+            f"(was {result['sourceDurationSeconds']}s, removed {result['removedSeconds']}s)"
+        )
     if stage == "matte":
         stats = result["stats"]
         state = "ok" if result["ok"] else "UNUSABLE"
@@ -150,7 +161,7 @@ def _selected_stages(args: argparse.Namespace) -> list[str]:
                 f"Valid stages: {', '.join(STAGE_ORDER)}"
             )
         start = STAGE_ORDER.index(args.start_from)
-    return list(STAGE_ORDER[start:])
+    return [s for s in STAGE_ORDER[start:] if s in DEFAULT_STAGES]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -200,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         "report": (lambda: s05_report.run(config, paths), paths.review_report),
         "track": (lambda: s06_face_track.run(config, paths), paths.face_track),
         "matte": (lambda: s07_person_matte.run(config, paths), paths.person_matte),
+        "cut": (lambda: s08_rough_cut.run(config, paths), paths.rough_cut),
     }
 
     selected = _selected_stages(args)
@@ -223,6 +235,9 @@ def main(argv: list[str] | None = None) -> int:
         except MediaToolError as exc:
             print(f"[{stage}] FAILED — media tool error:\n{exc}", file=sys.stderr)
             return 2
+        except ApprovalError as exc:
+            print(f"[{stage}] REFUSED\n{exc}", file=sys.stderr)
+            return 5
         except (FaceTrackError, MatteError) as exc:
             # A missing model or an unreadable video stream: the message says
             # exactly what to do, so a stack trace would only bury it.
@@ -246,13 +261,21 @@ def main(argv: list[str] | None = None) -> int:
     print()
     if paths.edl.exists():
         edl = read_json(paths.edl)
+        # Counted from the file as it stands, not from stats written before a
+        # human edited it.
+        pending = sum(1 for p in edl["proposals"] if p["status"] == "review")
         print(
             f"Approval checkpoint: {edl['approval']['status']}. "
-            f"{edl['stats']['needsReview']} proposal(s) need a decision."
+            f"{pending} proposal(s) need a decision."
         )
     if paths.review_report.exists():
         print(f"Review report: {paths.review_report}")
-    print("No video has been cut. Cutting stages are not implemented yet.")
+
+    if paths.rough_cut.exists():
+        print(f"Rough cut: {paths.rough_cut}")
+        print("Cuts only — no subtitles, camera moves, graphics or audio cleanup yet.")
+    else:
+        print("No video has been cut. Run --only cut once the EDL is approved.")
     return 0
 
 

@@ -160,6 +160,7 @@ def main() -> int:
                 paths = ProjectPaths(
                     slug="matte-test", root=root,
                     data=root / "data", cache=root / "cache", review=root / "review",
+                    output=root / "output",
                 )
                 paths.ensure()
                 s01_ingest.run(config, DEMO.resolve(), paths)

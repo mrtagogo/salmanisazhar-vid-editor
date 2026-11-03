@@ -89,7 +89,8 @@
 
   "output": {
     "portrait": { "width": 1080, "height": 1920, "fps": 30 },
-    "landscape": { "width": 1920, "height": 1080, "fps": 30 }
+    "landscape": { "width": 1920, "height": 1080, "fps": 30 },
+    "roughCut": { "crf": 18, "preset": "medium", "audioBitrate": "192k" }
   },
 
   "review": {

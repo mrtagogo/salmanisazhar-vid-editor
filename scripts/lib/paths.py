@@ -35,6 +35,7 @@ class ProjectPaths:
     data: Path
     cache: Path
     review: Path
+    output: Path
 
     # --- analysis artefacts (timestamps inside these files are in SECONDS) ---
     @property
@@ -70,6 +71,11 @@ class ProjectPaths:
         return self.cache / "audio-16k-mono.wav"
 
     @property
+    def rough_cut(self) -> Path:
+        """The approved cuts applied. The first artefact that is a video."""
+        return self.output / "rough-cut.mp4"
+
+    @property
     def matte_video(self) -> Path:
         """Greyscale video: luma IS the alpha. See s07_person_matte."""
         return self.cache / "matte.mp4"
@@ -79,7 +85,7 @@ class ProjectPaths:
         return self.review / "review-report.md"
 
     def ensure(self) -> None:
-        for directory in (self.data, self.cache, self.review):
+        for directory in (self.data, self.cache, self.review, self.output):
             directory.mkdir(parents=True, exist_ok=True)
 
 
@@ -93,4 +99,5 @@ def project_paths(source: Path, slug: str | None = None) -> ProjectPaths:
         data=root / "data",
         cache=root / "cache",
         review=root / "review",
+        output=root / "output",
     )

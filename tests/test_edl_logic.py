@@ -168,6 +168,7 @@ def main() -> int:
         paths = ProjectPaths(
             slug="fixture", root=root, data=root / "data",
             cache=root / "cache", review=root / "review",
+            output=root / "output",
         )
         _build_artefacts(paths)
 

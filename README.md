@@ -3,11 +3,11 @@
 An intelligent editing pipeline for Indonesian talking-head video. This
 repository is a reusable production engine, not a single video project.
 
-**Current state: milestone 1 of the pipeline — ingestion and analysis.**
+**Current state: analysis, plus the first cut.**
 The engine inspects footage, transcribes it, finds silence, reasons about what
-could be cut, and produces a review report. **It does not cut, compose or
-render anything yet.** That is deliberate: the approval checkpoint has to work
-before automatic cutting is built.
+could be cut, and produces a review report. Once a human approves that report
+it will apply the cuts. **It does not compose or render anything yet** — no
+subtitles, camera moves, graphics or audio cleanup.
 
 ---
 
@@ -55,9 +55,10 @@ tests/
   make_test_clip.py         Generates a synthetic clip for end-to-end testing
 projects/<slug>/
   data/       01-metadata, 02-transcript, 03-silence, 04-edl,
-              06-face-track, 07-person-matte, asset-manifest
+              06-face-track, 07-person-matte, 08-rough-cut, asset-manifest
   cache/      extracted 16 kHz mono audio, matte.mp4
   review/     review-report.md
+  output/     rough-cut.mp4
 ```
 
 All timestamps in project data are **seconds**. Conversion to frames happens
@@ -137,6 +138,16 @@ Useful flags:
 
 Stages run in order:
 `ingest → assets → transcribe → silence → edl → report → track → matte`.
+
+`cut` is deliberately NOT in that default run. It needs a human approval
+first, so it is asked for by name:
+
+```bash
+python -m scripts.run_analysis --only cut
+```
+
+It refuses, with exit code 5, while `approval.status` is anything but
+`approved`.
 The two video stages run last because they need only the video, and they are
 the slowest — the approval checkpoint is ready to read while frames are still
 being chewed.
@@ -187,6 +198,14 @@ python -m tests.test_face_detection  # 16 checks — detection, end to end
 
 ```bash
 python -m tests.test_matte           # 33 checks — matting, round-trip, real run
+```
+
+```bash
+python -m tests.test_transliteration # 40 checks — scripture the transcript loses
+```
+
+```bash
+python -m tests.test_rough_cut       # 22 checks — the approval gate and the cut
 ```
 
 `test_edl_logic` runs 35 deterministic checks over a hand-built Indonesian
@@ -283,6 +302,7 @@ landscape Remotion compositions, audio cleanup, rendering and final
 inspection. Portrait (1080×1920) and landscape (1920×1080) will be separate
 compositions — landscape will never be a crop of the portrait render.
 
-The renderer that puts footage, matte and effects on one timeline. Both
-analysis passes it depends on now exist; what remains is the compositing
-itself, and it waits on a real recording and one approved EDL.
+The renderer that puts footage, matte and effects on one timeline: subtitles
+and keyword highlights, camera moves, graphics, audio cleanup, and separate
+portrait and landscape compositions. Everything it depends on now exists —
+the face track, the matte, the effects and a cut to work from.
