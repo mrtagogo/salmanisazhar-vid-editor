@@ -182,10 +182,29 @@ a status:
 | `review` | Genuinely ambiguous — yours to decide |
 | `blocked` | The engine considered it and refused |
 
-To approve: read `review/review-report.md`, set each `review` proposal to
-`auto` (apply) or `blocked` (keep), then set `approval.status` to `approved`
-with `approvedBy` and `approvedAt` filled in. No cutting stage may read the
-EDL while the status is `pending`.
+To approve, the easy way — a numbered sheet, answered by number:
+
+```bash
+python -m scripts.decisions make --slug kajian-02
+```
+
+```bash
+python -m scripts.decisions apply --slug kajian-02 --cut 1,3,5-8 --keep 2,4
+```
+
+`make` writes `review/keputusan-potong.md`: every cut numbered, with the words
+it removes, the words either side, and a recommendation. `apply` turns an
+answer into statuses and approves the EDL.
+
+Two things it guarantees. **Anything not named is kept** — silence is not
+consent to cut. And the numbering is stored alongside the EDL it was built
+from, so if the EDL is regenerated the sheet is stale and `apply` refuses
+rather than cutting something else under the same number.
+
+By hand: read `review/review-report.md`, set each `review` proposal to `auto`
+(apply) or `blocked` (keep), then set `approval.status` to `approved` with
+`approvedBy` and `approvedAt` filled in. No cutting stage may read the EDL
+while the status is `pending`.
 
 The EDL also carries two ready-made plans — `plans.autoApprovedOnly` and
 `plans.allProposals` — each with keep-ranges, so you can see the runtime
@@ -225,6 +244,14 @@ python -m tests.test_rough_cut       # 22 checks — the approval gate and the c
 
 ```bash
 python -m tests.test_sync            # 16 checks — aligning a separate soundtrack
+```
+
+```bash
+python -m tests.test_retakes         # 23 checks — repeated takes, glances away
+```
+
+```bash
+python -m tests.test_decisions       # 30 checks — the numbered approval sheet
 ```
 
 `test_edl_logic` runs 35 deterministic checks over a hand-built Indonesian

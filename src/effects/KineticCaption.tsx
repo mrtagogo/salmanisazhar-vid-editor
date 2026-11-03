@@ -238,38 +238,35 @@ const Caption: React.FC<{ c: FxCtx }> = ({ c }) => {
               fontWeight: Number(line.weight),
               fontSize: line.size,
               letterSpacing: line.rtl ? 0 : '-0.02em',
-              // Kapur Hangat on a Tinta Malam block: 15.3:1, the pairing the
-              // brand reserves for subtitles. The block also keeps the text
-              // off whatever the footage happens to be doing behind it.
-              backgroundColor: BRAND.tintaMalam,
-              padding: `${line.size * 0.16}px ${line.size * 0.3}px`,
-              borderRadius: line.size * 0.14,
-              boxSizing: 'content-box',
             }}
           >
             {line.tokens.map((token) => {
               const i = n++;
-              const k = e('expo.out', c.t, at[i], 0.2);
-              const color = token.key ? keyColor : THEME.ink;
-              // A word not said yet keeps its place, so the line never
-              // re-centres when the next word lands.
-              if (c.t < at[i]) {
-                return (
-                  <span key={i} style={{ visibility: 'hidden' }}>
-                    {token.w}
-                  </span>
-                );
-              }
+              // The word being said right now: from its own clock until the
+              // next word starts.
+              const spoken = c.t >= at[i] && c.t < (at[i + 1] ?? c.d);
               return (
                 <span
                   key={i}
                   style={{
                     display: 'inline-block',
-                    color,
-                    textShadow: THEME.captionShadow,
-                    transform: `translateY(${(1 - k) * line.size * 0.35}px)`,
-                    filter: k < 0.999 ? `blur(${(1 - k) * line.size * 0.12}px)` : undefined,
-                    opacity: clamp((c.t - at[i]) * 15),
+                    // Every word carries the same padding whether or not it is
+                    // highlighted, so the line does not shift as the amber
+                    // travels along it.
+                    padding: `${line.size * 0.1}px ${line.size * 0.16}px`,
+                    borderRadius: line.size * 0.12,
+                    backgroundColor: spoken ? BRAND.nyalaPelita : 'transparent',
+                    // Tinta Malam on amber is 8.1:1 — the pairing the brand
+                    // reserves for a highlight block. White on amber is 2.2:1
+                    // and is ruled out, so the highlighted word inverts.
+                    color: spoken ? BRAND.tintaMalam : THEME.ink,
+                    // Outline rather than a block behind the sentence: the
+                    // whole line is readable over any footage, and nothing
+                    // appears on screen before it has been said.
+                    WebkitTextStrokeWidth: spoken ? 0 : line.size * 0.055,
+                    WebkitTextStrokeColor: BRAND.tintaMalam,
+                    paintOrder: 'stroke fill',
+                    textShadow: spoken ? undefined : THEME.captionShadow,
                   }}
                 >
                   {token.w}
