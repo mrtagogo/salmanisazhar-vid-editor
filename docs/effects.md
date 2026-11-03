@@ -97,12 +97,9 @@ identical frame for frame.
 
 ## What is still missing
 
-Two analysis passes do not exist, and five of the six effects need the first:
+The **face track** that five of the six effects need now exists — see
+[`docs/face-tracking.md`](face-tracking.md). One pass is still missing:
 
-- **Face track** — per-frame face position. Everything that frames, or that
-  keeps a graphic off the face, depends on it. Until it exists the only source
-  is `syntheticTrack()`, which is for proofs and must never reach a render
-  meant for publishing.
 - **Person matte** — an alpha cut-out of the presenter. Without it a `Behind`
   layer is not behind anything. `text-behind` places a word to straddle the top
   of the head on the assumption that the body hides its lower half; with no
@@ -110,9 +107,19 @@ Two analysis passes do not exist, and five of the six effects need the first:
 
 This gap is carried in code, not only here. Each effect declares what it
 needs, `AVAILABLE` in [`src/effects/index.ts`](../src/effects/index.ts) records
-what the engine can currently supply — both false — and `unmetRequirements()`
-is what a composition must consult before using an effect. The last two rows
-of the proof assert that `text-behind` is refused and `bottom-fade` is not.
+what the engine can produce, and `unmetRequirements()` is what a composition
+must consult before using an effect. The proof asserts that `text-behind` is
+still refused for want of a matte, and that `lean-in` is now allowed.
+
+Being allowed in general is not the same as working on one recording.
+`fromArtefact()` in [`src/lib/track.ts`](../src/lib/track.ts) refuses a track
+whose `ok` is false, and passes `gaps` through: inside a gap the face position
+is held, not known, so an effect promising to stay off the face cannot keep
+that promise there.
+
+The proofs still run on `syntheticTrack()`, because there is still no footage
+in the repository to track. That function is for proofs and must never reach a
+render meant for publishing.
 
 There is also no renderer. These are the editorial moves; applying them to real
 footage is milestone 2, and waits on an approved EDL.

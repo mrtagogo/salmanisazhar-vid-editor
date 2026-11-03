@@ -14,6 +14,59 @@
 
 import type { Track } from './core';
 
+/** The shape of data/06-face-track.json, as the Python side writes it. */
+export type FaceTrackArtefact = {
+  schema: string;
+  ok: boolean;
+  reason: string | null;
+  fps: number;
+  frames: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  face: number[][];
+  top: number[];
+  gaps: { startFrame: number; endFrame: number; startSeconds: number; endSeconds: number }[];
+  stats: { coverage: number; sampleCount: number; meanScore: number | null; gapCount: number };
+  warnings: string[];
+};
+
+/**
+ * Turn the analysis artefact into a Track, refusing one that cannot be used.
+ *
+ * A track the engine is not confident about is worse than no track: effects
+ * would go on promising to keep clear of a face whose position is a guess. So
+ * an unusable artefact throws here rather than being quietly accepted.
+ *
+ * Gaps do NOT throw — a moment where the presenter turns away is normal. They
+ * are returned for the caller to reason about, because inside a gap the face
+ * position is held, not known.
+ */
+export function fromArtefact(data: FaceTrackArtefact): Track {
+  if (!data.ok) {
+    throw new Error(
+      `face track is unusable: ${data.reason ?? 'no reason given'}. `
+        + 'Re-run the track stage, or do not use effects that need a face.',
+    );
+  }
+  if (!data.face.length || data.face.length !== data.frames) {
+    throw new Error(
+      `face track is malformed: ${data.frames} frames declared, ${data.face.length} entries.`,
+    );
+  }
+  if (data.top.length !== data.face.length) {
+    throw new Error('face track is malformed: face and top are different lengths.');
+  }
+  return {
+    fps: data.fps,
+    width: data.sourceWidth,
+    height: data.sourceHeight,
+    frames: data.frames,
+    duration: data.frames / data.fps,
+    face: data.face,
+    top: data.top,
+  };
+}
+
 export type SyntheticOptions = {
   width: number;
   height: number;

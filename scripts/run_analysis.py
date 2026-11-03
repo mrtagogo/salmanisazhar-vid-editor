@@ -18,13 +18,17 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .lib.config import ENGINE_ROOT, load_config
+from .lib.faces import FaceTrackError
 from .lib.jsonio import read_json
 from .lib.media import MediaToolError
 from .lib.paths import INPUT_DIR, ProjectPaths, project_paths
 from .stages import assets as stage_assets
-from .stages import s01_ingest, s02_transcribe, s03_silence, s04_edl, s05_report
+from .stages import s01_ingest, s02_transcribe, s03_silence, s04_edl, s05_report, s06_face_track
 
-STAGE_ORDER = ("ingest", "assets", "transcribe", "silence", "edl", "report")
+# Face tracking runs last: it needs only the video, nothing the audio branch
+# produces, and it is the slowest stage. Putting it after the report means the
+# approval checkpoint is ready to read while the frames are still being chewed.
+STAGE_ORDER = ("ingest", "assets", "transcribe", "silence", "edl", "report", "track")
 
 MEDIA_SUFFIXES = {".mp4", ".mov", ".mkv", ".m4v", ".avi", ".mts", ".webm"}
 
@@ -98,6 +102,14 @@ def _summarize(stage: str, result: dict[str, Any]) -> str:
             f"{result['reportPath']} "
             f"({result['autoApproved']} auto, {result['needsReview']} to review)"
         )
+    if stage == "track":
+        if not result["ok"]:
+            return f"NO FACE FOUND — {result['reason']}"
+        stats = result["stats"]
+        return (
+            f"{result['frames']} frames, coverage {stats['coverage'] * 100:.1f}%, "
+            f"{stats['gapCount']} gap(s), mean score {stats['meanScore']}"
+        )
     return "done"
 
 
@@ -168,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         "silence": (lambda: s03_silence.run(config, paths), paths.silence),
         "edl": (lambda: s04_edl.run(config, paths), paths.edl),
         "report": (lambda: s05_report.run(config, paths), paths.review_report),
+        "track": (lambda: s06_face_track.run(config, paths), paths.face_track),
     }
 
     selected = _selected_stages(args)
@@ -191,6 +204,11 @@ def main(argv: list[str] | None = None) -> int:
         except MediaToolError as exc:
             print(f"[{stage}] FAILED — media tool error:\n{exc}", file=sys.stderr)
             return 2
+        except FaceTrackError as exc:
+            # A missing model or an unreadable video stream: the message says
+            # exactly what to do, so a stack trace would only bury it.
+            print(f"[{stage}] FAILED — face tracking:\n{exc}", file=sys.stderr)
+            return 4
         except Exception as exc:  # noqa: BLE001 - report, never swallow
             print(f"[{stage}] FAILED — {type(exc).__name__}: {exc}", file=sys.stderr)
             traceback.print_exc()

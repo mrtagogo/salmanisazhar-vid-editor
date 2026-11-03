@@ -12,6 +12,8 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -130,6 +132,73 @@ def extract_audio(config: dict, source: Path, destination: Path) -> Path:
         ]
     )
     return destination
+
+
+def sample_frames(
+    config: dict,
+    source: Path,
+    *,
+    fps: float,
+    width: int,
+    height: int,
+) -> Iterator[bytes]:
+    """Yield raw BGR frames, decoded at `fps` and scaled to width x height.
+
+    ffmpeg stays the only decoder in the engine. OpenCV could open the file
+    itself, but then two decoders would disagree about frame timing on a
+    variable-frame-rate recording — which is most phone footage — and the face
+    track would drift against the transcript.
+
+    Frames come out as plain bytes rather than arrays so this layer stays free
+    of numpy: the caller reshapes.
+    """
+    frame_bytes = width * height * 3
+    if frame_bytes <= 0:
+        raise MediaToolError(f"Refusing to sample frames at {width}x{height}")
+
+    args = [
+        str(ffmpeg_bin(config)),
+        "-hide_banner",
+        "-nostdin",
+        "-i", str(source),
+        "-an",
+        "-vf", f"fps={fps},scale={width}:{height}",
+        "-f", "rawvideo",
+        "-pix_fmt", "bgr24",
+        "-",
+    ]
+
+    # stderr goes to a file, not a pipe: ffmpeg is chatty, and a pipe nobody
+    # drains while we read stdout deadlocks once its buffer fills.
+    with tempfile.TemporaryFile(mode="w+b") as errfile:
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=errfile)
+        assert proc.stdout is not None
+        drained = False
+        try:
+            while True:
+                chunk = proc.stdout.read(frame_bytes)
+                if not chunk:
+                    break
+                if len(chunk) < frame_bytes:
+                    # A truncated final frame means the stream ended mid-frame;
+                    # it is incomplete, so it is dropped rather than decoded.
+                    break
+                yield chunk
+            drained = True
+        finally:
+            proc.stdout.close()
+            if not drained:
+                # The caller stopped early. ffmpeg will die of a broken pipe,
+                # and that exit code says nothing about the file.
+                proc.kill()
+            code = proc.wait()
+            if code != 0 and drained:
+                errfile.seek(0)
+                text = errfile.read().decode("utf-8", "replace")
+                tail = "\n".join(text.strip().splitlines()[-20:])
+                raise MediaToolError(
+                    f"Frame sampling failed (exit {code}):\n  {' '.join(args)}\n\n{tail}"
+                )
 
 
 _SILENCE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")

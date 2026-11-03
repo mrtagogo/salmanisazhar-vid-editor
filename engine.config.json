@@ -37,6 +37,19 @@
     "silence": {
       "noiseFloorDb": -32,
       "minSilenceSeconds": 0.3
+    },
+
+    "faceTrack": {
+      "model": "models/face_detection_yunet_2023mar.onnx",
+      "sampleFps": 10,
+      "detectWidth": 640,
+      "scoreThreshold": 0.6,
+      "nmsThreshold": 0.3,
+      "topK": 50,
+      "smoothingSeconds": 0.25,
+      "maxGapSeconds": 0.5,
+      "minCoverage": 0.8,
+      "headTopAboveCentre": 0.75
     }
   },
 

@@ -50,15 +50,19 @@ export const resolveFx = (name: string) => {
 };
 
 /**
- * What the analysis side can currently supply.
+ * What the analysis side can produce.
  *
- * Both are false: scripts/ produces a transcript, silence spans and an EDL,
- * but no face track and no person matte. Flip these when those passes land —
- * and only then, because unmetRequirements() is what stops an effect from
- * drawing across the presenter's face.
+ * `faceTrack` is true: the track stage writes data/06-face-track.json. That
+ * is a statement about the ENGINE, not about any one project — a particular
+ * recording may still yield a track too poor to use, which is why
+ * fromArtefact() in src/lib/track.ts refuses an artefact whose `ok` is false,
+ * and why gaps are carried through for the caller to reason about.
+ *
+ * `personMatte` is still false: nothing cuts the presenter out of the
+ * background, so a Behind layer is not behind anything.
  */
 export const AVAILABLE: Record<Requirement, boolean> = {
-  faceTrack: false,
+  faceTrack: true,
   personMatte: false,
 };
 

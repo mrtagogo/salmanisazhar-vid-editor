@@ -170,10 +170,16 @@ function runChecks(): Check[] {
   // --- requirements ---
   const unmet = unmetRequirements('text-behind');
   add(
-    'text-behind is refused without a matte',
+    'text-behind is still refused: no person matte',
     unmet.join(', ') || 'none',
-    'faceTrack, personMatte',
-    unmet.includes('personMatte') && unmet.includes('faceTrack'),
+    'personMatte',
+    unmet.length === 1 && unmet[0] === 'personMatte',
+  );
+  add(
+    'the face track is now available, so lean-in is allowed',
+    unmetRequirements('lean-in').join(', ') || 'none',
+    'none',
+    unmetRequirements('lean-in').length === 0,
   );
   add(
     'bottom-fade needs nothing we lack',

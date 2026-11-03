@@ -54,6 +54,10 @@ class ProjectPaths:
         return self.data / "04-edl.json"
 
     @property
+    def face_track(self) -> Path:
+        return self.data / "06-face-track.json"
+
+    @property
     def asset_manifest(self) -> Path:
         return self.data / "asset-manifest.json"
 
