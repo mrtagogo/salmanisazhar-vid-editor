@@ -21,7 +21,7 @@ import {
 } from 'remotion';
 
 import { FONT } from '../config/fonts';
-import { THEME } from '../config/theme';
+import { LIFT_BLACKS, THEME } from '../config/theme';
 import { KINETIC_CAPTION } from '../effects/KineticCaption';
 import type { FxCtx, FxSpec } from '../lib/core';
 import { px } from '../lib/layout';
@@ -164,7 +164,12 @@ export const Kajian: React.FC<KajianProps> = ({ data, showWithheld = true }) => 
 
   return (
     <AbsoluteFill style={{ backgroundColor: THEME.bg }}>
-      <OffthreadVideo src={staticFile(data.video)} />
+      {/*
+        Footage blacks are lifted to about Tinta Malam. A plain brand frame
+        next to ungraded footage otherwise shows two different blacks at the
+        join, and the eye reads that seam before it reads the content.
+      */}
+      <OffthreadVideo src={staticFile(data.video)} style={{ filter: LIFT_BLACKS }} />
       {caption}
     </AbsoluteFill>
   );

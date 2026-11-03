@@ -276,8 +276,8 @@ npm run proof:effects  # all six effects, plus 14 numeric checks
 
 | Path | Purpose |
 | --- | --- |
-| `src/config/fonts.ts` | Typefaces, with Arabic subsets declared explicitly |
-| `src/config/theme.ts` | Design tokens — the only place a colour may be defined |
+| `src/config/fonts.ts` | The three brand faces, the type scale, and the rules on where each may be used |
+| `src/config/theme.ts` | The brand palette, the contrast rulings, and the only place a colour may be defined |
 | `src/lib/` | Easing, the effect contract, layout zones, text measurement |
 | `src/effects/` | The six vendored effects and the registry |
 | `src/proofs/` | Compositions that exist to be looked at, not published |

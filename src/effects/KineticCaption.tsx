@@ -25,8 +25,8 @@
 import React from 'react';
 import { AbsoluteFill } from 'remotion';
 
-import { FONT } from '../config/fonts';
-import { THEME } from '../config/theme';
+import { FONT, SUBTITLE_FLOOR, TYPE, requireSubtitleSize } from '../config/fonts';
+import { BRAND, THEME } from '../config/theme';
 import { type FxCtx, type FxDef, opt, str } from '../lib/core';
 import { clamp, e } from '../lib/ease';
 import { px, safeTop, zones } from '../lib/layout';
@@ -101,11 +101,57 @@ export type CaptionLayout = {
 export function captionLayout(c: FxCtx): CaptionLayout | null {
   const raw = str(c, 'text', '');
   const asked = raw.split('/').map((l) => l.trim()).filter(Boolean).length;
-  const parsed = parseCaption(raw);
+  let parsed = parseCaption(raw);
   if (!parsed.length) return null;
 
   const maxWidth = c.W * opt(c, 'width', 0.82);
-  const base = px(c, opt(c, 'size', 72));
+  // Work Sans Medium, 56-72px on a 1080-wide canvas. Fraunces is not an
+  // option here: its thin strokes break up under compression the moment
+  // the frame moves, and a subtitle always moves.
+  const base = px(c, opt(c, 'size', 64));
+  const floor = px(c, SUBTITLE_FLOOR);
+
+  /** Fitted size for one line of tokens, or null while fonts are missing. */
+  const sizeOf = (tokens: Token[]) => {
+    const plain = tokens.map((t) => t.w).join(' ');
+    const rtl = isRtl(plain);
+    const fit = fitSize(
+      plain,
+      rtl ? FONT.arabic : TYPE.subtitle.family,
+      maxWidth,
+      rtl ? '400' : String(TYPE.subtitle.weight),
+      rtl ? 0 : -0.02,
+    );
+    return fit === null ? null : Math.min(base, fit);
+  };
+
+  // A long cue on one line has to shrink to fit the width, and can end up
+  // under the readable floor. We are allowed two lines, so use the second one
+  // before giving up any size: wrapping buys roughly double the width.
+  if (parsed.length === 1 && parsed[0].length >= 4) {
+    const single = sizeOf(parsed[0]);
+    if (single !== null && single < floor) {
+      const tokens = parsed[0];
+      // Split as evenly as possible by character count, so neither line is a
+      // stub — a one-word second line reads as a mistake.
+      const total = tokens.reduce((n, t) => n + t.w.length + 1, 0);
+      let running = 0;
+      let cut = 1;
+      let best = Infinity;
+      for (let i = 0; i < tokens.length - 1; i++) {
+        running += tokens[i].w.length + 1;
+        // Pick the split that balances best, rather than the first one past
+        // halfway — stopping at the first overshoot leaves a one-word second
+        // line, which reads as a mistake rather than a wrap.
+        const imbalance = Math.abs(running - (total - running));
+        if (imbalance < best) {
+          best = imbalance;
+          cut = i + 1;
+        }
+      }
+      parsed = [tokens.slice(0, cut), tokens.slice(cut)];
+    }
+  }
 
   const lines: LineLayout[] = [];
   for (const tokens of parsed) {
@@ -113,12 +159,14 @@ export function captionLayout(c: FxCtx): CaptionLayout | null {
     const rtl = isRtl(plain);
     // Arabic stays at a single weight: classical naskh is never bolded, and
     // Amiri ships only 400 (see src/config/fonts.ts).
-    const family = rtl ? FONT.arabic : FONT.ui;
-    const weight = rtl ? '400' : '800';
+    const family = rtl ? FONT.arabic : TYPE.subtitle.family;
+    // Arabic stays at a single weight: classical naskh is never bolded.
+    const weight = rtl ? '400' : String(TYPE.subtitle.weight);
     const tracking = rtl ? 0 : -0.02;
     const fit = fitSize(plain, family, maxWidth, weight, tracking);
     if (fit === null) return null;
     const size = Math.min(base, fit);
+    requireSubtitleSize(size, 'kinetic-caption');
     lines.push({ tokens, rtl, family, weight, size, height: size * (rtl ? 1.5 : 1.12) });
   }
 
@@ -190,6 +238,13 @@ const Caption: React.FC<{ c: FxCtx }> = ({ c }) => {
               fontWeight: Number(line.weight),
               fontSize: line.size,
               letterSpacing: line.rtl ? 0 : '-0.02em',
+              // Kapur Hangat on a Tinta Malam block: 15.3:1, the pairing the
+              // brand reserves for subtitles. The block also keeps the text
+              // off whatever the footage happens to be doing behind it.
+              backgroundColor: BRAND.tintaMalam,
+              padding: `${line.size * 0.16}px ${line.size * 0.3}px`,
+              borderRadius: line.size * 0.14,
+              boxSizing: 'content-box',
             }}
           >
             {line.tokens.map((token) => {

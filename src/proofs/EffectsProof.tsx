@@ -27,6 +27,8 @@ import type { FxCtx, FxDef } from '../lib/core';
 import { e } from '../lib/ease';
 import { chin } from '../lib/layout';
 import { coveredAt, fromArtefact as matteFromArtefact } from '../lib/matte';
+import { BRAND, CONTRAST_RULINGS, contrastRatio, requireContrast } from '../config/theme';
+import { SUBTITLE_FLOOR, requireDisplayType, requireSubtitleSize } from '../config/fonts';
 import { useFontsReady } from '../lib/measure';
 import { isRtl } from '../lib/text';
 import { proofCtx } from './ctx';
@@ -200,6 +202,62 @@ function runChecks(): Check[] {
     `${coveredAt(matte, 0.5)} / ${coveredAt(matte, 1.5)}`,
     'true / false',
     coveredAt(matte, 0.5) && !coveredAt(matte, 1.5),
+  );
+
+  // --- the brand ---
+  const drift = CONTRAST_RULINGS.filter(
+    (r) => Math.abs(contrastRatio(r.foreground, r.background) - r.ratio) > 0.06,
+  );
+  add(
+    'every stated contrast ratio recomputes',
+    drift.length ? drift.map((r) => r.foreground).join(', ') : 'all 6 agree',
+    'all 6 agree',
+    drift.length === 0,
+  );
+
+  const refuses = (fn: () => void) => {
+    try {
+      fn();
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  add(
+    'amber text on Kertas Tua is refused',
+    String(refuses(() => requireContrast(BRAND.nyalaPelita, BRAND.kertasTua, 'proof'))),
+    'true',
+    refuses(() => requireContrast(BRAND.nyalaPelita, BRAND.kertasTua, 'proof')),
+  );
+  add(
+    'the subtitle pairing is allowed',
+    f3(requireContrast(BRAND.kapurHangat, BRAND.tintaMalam, 'proof')),
+    '15.3 ish',
+    Math.abs(requireContrast(BRAND.kapurHangat, BRAND.tintaMalam, 'proof') - 15.31) < 0.1,
+  );
+  add(
+    'Fraunces is refused on moving text',
+    String(refuses(() => requireDisplayType(110, true, 'proof'))),
+    'true',
+    refuses(() => requireDisplayType(110, true, 'proof')),
+  );
+  add(
+    'Fraunces is refused below 96px',
+    String(refuses(() => requireDisplayType(60, false, 'proof'))),
+    'true',
+    refuses(() => requireDisplayType(60, false, 'proof')),
+  );
+  add(
+    'Fraunces is allowed large and still',
+    String(!refuses(() => requireDisplayType(110, false, 'proof'))),
+    'true',
+    !refuses(() => requireDisplayType(110, false, 'proof')),
+  );
+  add(
+    `a subtitle under ${SUBTITLE_FLOOR}px is refused`,
+    String(refuses(() => requireSubtitleSize(44, 'proof'))),
+    'true',
+    refuses(() => requireSubtitleSize(44, 'proof')),
   );
 
   return checks;
