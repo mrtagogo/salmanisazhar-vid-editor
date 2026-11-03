@@ -67,9 +67,9 @@ only at the composition layer (not built yet).
 - **Python** with `faster-whisper`: `python -m pip install faster-whisper`.
 - **Node 22+** for the composition layer: `npm install`. Remotion and React
   are pinned to exact versions (`remotion` 4.0.534, `react` 19.1.1) so they
-  stay aligned with the effects library this project borrows from. Only the
-  packages actually in use are installed — no three.js or GSAP until effects
-  are copied in.
+  stay aligned with the effects library this project borrows from. There are
+  four dependencies and no others: no three.js, and deliberately no GSAP —
+  see [`docs/effects.md`](docs/effects.md).
 
 ### GPU
 
@@ -188,28 +188,55 @@ and awaits a real recording.
 
 ## Composition layer (Remotion)
 
-Only the Arabic groundwork exists so far. Compositions for the actual video
-come later, and depend on an approved EDL.
+The groundwork and six effects exist. Compositions for the actual video come
+later and depend on an approved EDL.
 
 ```bash
-npm run proof:arabic   # render the Arabic shaping proof to out/
-npm run studio         # open Remotion Studio
+npm run check          # tsc --noEmit
+```
+
+```bash
+npm run proof:arabic   # Arabic shaping
+```
+
+```bash
+npm run proof:caption  # a full-size subtitle frame, Indonesian + Arabic
+```
+
+```bash
+npm run proof:effects  # all six effects, plus 14 numeric checks
 ```
 
 | Path | Purpose |
 | --- | --- |
 | `src/config/fonts.ts` | Typefaces, with Arabic subsets declared explicitly |
 | `src/config/theme.ts` | Design tokens — the only place a colour may be defined |
-| `src/proofs/ArabicShapingProof.tsx` | Renders hard Arabic cases for human inspection |
+| `src/lib/` | Easing, the effect contract, layout zones, text measurement |
+| `src/effects/` | The six vendored effects and the registry |
+| `src/proofs/` | Compositions that exist to be looked at, not published |
 
 Arabic rendering is **verified**, not assumed — see
-[`docs/arabic-shaping.md`](docs/arabic-shaping.md) for the rendered proof and
-what it turned up. The short version: a font without an Arabic subset still
-renders Arabic by falling back to a system face, so missing coverage never
-looks broken, it just differs per machine.
+[`docs/arabic-shaping.md`](docs/arabic-shaping.md). The short version: a font
+without an Arabic subset still renders Arabic by falling back to a system
+face, so missing coverage never looks broken, it just differs per machine.
+
+The effects are derived from facecammaxxing, rewritten rather than copied —
+see [`docs/effects.md`](docs/effects.md) for what was wrong in the original
+for this use (Arabic laid out left-to-right, measurement that breaks React's
+rules of hooks, a layout hard-coded to a vertical feed) and what each effect
+still needs. `NOTICE` carries both upstream MIT notices.
 
 Frame sizes come from `engine.config.json`, so the Python and TypeScript sides
 cannot drift. The composition layer is the only place that deals in frames.
+
+### The two missing passes
+
+Five of the six effects need a **face track**, and `text-behind` also needs a
+**person matte**. Neither pass exists. That is enforced in code rather than
+only written down: every effect declares what it needs, `AVAILABLE` in
+`src/effects/index.ts` records what the engine can supply, and
+`unmetRequirements()` is what a composition must consult before using one. An
+unmet matte means a graphic lying across the presenter's face.
 
 ## Not implemented yet
 
@@ -218,3 +245,8 @@ keyword highlights, B-roll and motion graphics planning, portrait and
 landscape Remotion compositions, audio cleanup, rendering and final
 inspection. Portrait (1080×1920) and landscape (1920×1080) will be separate
 compositions — landscape will never be a crop of the portrait render.
+
+On the analysis side: the face-tracking and person-matte passes described
+above. On the composition side: the renderer that puts footage, matte and
+effects on one timeline. All of it waits on a real recording and one approved
+EDL.

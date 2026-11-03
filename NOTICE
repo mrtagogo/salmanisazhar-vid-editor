@@ -1,0 +1,107 @@
+Third-party code in Tadabbur Motion
+===================================
+
+Tadabbur Motion is released under the MIT License, Copyright (c) 2026
+M. Salman Azhar. See LICENSE.
+
+Part of the composition layer is derived from facecammaxxing, which is itself
+derived from claude-video-effects. Both are MIT licensed. Both notices are
+reproduced in full below, as that licence requires.
+
+  facecammaxxing        https://github.com/aaksa/facecammaxxing
+  claude-video-effects  https://github.com/Vibha-Ramprakash/claude-video-effects
+
+
+What was derived, and where it lives now
+----------------------------------------
+
+Six effects and the small amount of substrate they need. These are rewritten
+rather than copied: the layout is format-aware instead of hard-coded to
+1080x1920, every colour is a theme token, text measurement no longer breaks
+React's rules of hooks, and captions understand right-to-left script.
+
+  src/lib/ease.ts              Easing names and curve conventions (see below)
+  src/lib/core.ts              FxCtx / FxDef effect contract, face
+                               interpolation, camera layer transform,
+                               face-guard mask
+  src/lib/layout.ts            Platform safe zones, chin and band placement
+  src/effects/camera.ts        lean-in, slow-push
+  src/effects/KineticCaption.tsx   kinetic-caption
+  src/effects/NameTag.tsx      name-tag
+  src/effects/BottomFade.tsx   bottom-fade
+  src/effects/TextBehind.tsx   text-behind
+
+The easing curves are OUR implementation, not GSAP's. The reference calls
+gsap.parseEase for curves named 'expo.out', 'power2.in' and so on. GSAP ships
+under the GreenSock "Standard 'no charge' License", not MIT, so it is not a
+dependency here. src/lib/ease.ts implements the same named families from the
+standard formulas and is endpoint-exact; motion will be very close to the
+reference but is not claimed to be identical frame for frame.
+
+
+What was deliberately NOT taken
+-------------------------------
+
+  - The Stage / Film renderer, the person matte, and the three.js and
+    mediapipe passes. Those need a face track and an alpha matte that this
+    engine does not produce yet.
+  - Effects built on three.js (carousel-spin, orbit, prop-3d) and the chart,
+    tier-list and glass-widget sets. They are creator-metrics furniture, not
+    kajian material.
+  - lib/fonts.ts. It loads all six of its faces with subsets: ['latin'],
+    which makes Arabic fall back silently to a system face. See
+    docs/arabic-shaping.md.
+
+
+-------------------------------------------------------------------------------
+facecammaxxing
+-------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 aaksa
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+claude-video-effects
+-------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 Vibha Ramprakash
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

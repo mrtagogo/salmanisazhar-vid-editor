@@ -6,7 +6,10 @@
   "license": "MIT",
   "scripts": {
     "studio": "remotion studio",
+    "check": "tsc --noEmit",
     "proof:arabic": "remotion still ArabicShapingProof out/arabic-shaping-proof.png --image-format=png",
+    "proof:caption": "remotion still CaptionProof out/caption-proof.png --image-format=png",
+    "proof:effects": "remotion still EffectsProof out/effects-proof.png --image-format=png",
     "render": "remotion render"
   },
   "dependencies": {

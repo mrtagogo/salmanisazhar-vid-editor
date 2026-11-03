@@ -12,6 +12,8 @@ import { Composition } from 'remotion';
 
 import engineConfig from '../engine.config.json';
 import { ArabicShapingProof } from './proofs/ArabicShapingProof';
+import { CaptionProof } from './proofs/CaptionProof';
+import { EffectsProof } from './proofs/EffectsProof';
 
 const { portrait } = engineConfig.output;
 
@@ -29,6 +31,34 @@ export const RemotionRoot: React.FC = () => {
         component={ArabicShapingProof}
         width={portrait.width}
         height={2400}
+        fps={portrait.fps}
+        durationInFrames={1}
+      />
+
+      {/*
+        The caption proof IS the real portrait frame, at full size: direction,
+        placement against the face guard and the two-line rule all have to be
+        judged at the size they will be read.
+      */}
+      <Composition
+        id="CaptionProof"
+        component={CaptionProof}
+        width={portrait.width}
+        height={portrait.height}
+        fps={portrait.fps}
+        durationInFrames={1}
+      />
+
+      {/*
+        A contact sheet: six whole frames scaled down, then the checks that are
+        numbers rather than pictures. Taller than the output format for the
+        same reason as the shaping proof — it is an instrument, not a frame.
+      */}
+      <Composition
+        id="EffectsProof"
+        component={EffectsProof}
+        width={portrait.width}
+        height={2100}
         fps={portrait.fps}
         durationInFrames={1}
       />
