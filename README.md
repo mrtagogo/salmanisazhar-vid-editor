@@ -114,7 +114,20 @@ checked against each other and produced identical transcripts and proposals.
 
 ## Running the analysis
 
-Put a video in `input/`, then from the engine root:
+Check the sound first — it takes seconds, and transcription is the
+expensive stage that everything downstream trusts:
+
+```bash
+python -m scripts.checkaudio --input "input/kajian-01.mp4"
+```
+
+It measures how far speech stands above the room and says whether the take is
+worth transcribing. Calibrated against two recordings of the same talk: the
+camera microphone managed 22 dB and lost a recitation entirely, a recorder
+closer to the speaker managed 45 dB and kept it. Exit code 1 means do not
+bother.
+
+Then put a video in `input/` and, from the engine root:
 
 ```bash
 python -m scripts.run_analysis
@@ -252,6 +265,10 @@ python -m tests.test_retakes         # 23 checks — repeated takes, glances awa
 
 ```bash
 python -m tests.test_decisions       # 30 checks — the numbered approval sheet
+```
+
+```bash
+python -m tests.test_checkaudio      # 15 checks — the recording quality verdict
 ```
 
 `test_edl_logic` runs 35 deterministic checks over a hand-built Indonesian
