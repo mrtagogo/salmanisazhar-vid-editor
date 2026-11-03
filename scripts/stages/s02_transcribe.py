@@ -16,7 +16,7 @@ from ..lib import media
 from ..lib.config import get
 from ..lib.cuda import enable_bundled_cuda
 from ..lib.jsonio import read_json, rounded, utc_now, write_json
-from ..lib.paths import ProjectPaths
+from ..lib.paths import ProjectPaths, audio_source
 from ..lib.textutil import contains_arabic
 
 SCHEMA = "tadabbur-motion/transcript@1"
@@ -191,7 +191,7 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
     paths.ensure()
     # Re-use the cached 16 kHz mono extraction when it is already there.
     if not paths.audio_wav.exists():
-        media.extract_audio(config, source, paths.audio_wav)
+        media.extract_audio(config, audio_source(metadata, source), paths.audio_wav)
 
     sample_rate = int(get(config, "analysis.audioExtract.sampleRate", 16000))
     audio = _load_pcm(paths.audio_wav, sample_rate)

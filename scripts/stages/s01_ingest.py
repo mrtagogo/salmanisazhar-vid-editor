@@ -11,7 +11,7 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
-from ..lib import media
+from ..lib import media, sync
 from ..lib.config import get
 from ..lib.jsonio import rounded, utc_now, write_json
 from ..lib.paths import ProjectPaths
@@ -199,7 +199,67 @@ def _validate(
     return {"ok": not errors, "errors": errors, "warnings": warnings}
 
 
-def run(config: dict, source: Path, paths: ProjectPaths) -> dict[str, Any]:
+def _align_external_audio(
+    config: dict,
+    source: Path,
+    sound: Path,
+    paths: ProjectPaths,
+    duration: float,
+    validation: dict,
+) -> dict[str, Any]:
+    """Line a separately recorded soundtrack up with the picture.
+
+    Dual-system sound: the camera's own track is a guide, and the real sound
+    comes from a recorder closer to the speaker. They start at different
+    moments, so the offset is measured rather than asked for — and if the
+    measurement is not trustworthy the audio is NOT used. Guessing an offset
+    would desynchronise every word while still looking like it worked.
+    """
+    if not sound.exists():
+        raise FileNotFoundError(f"Audio file not found: {sound}")
+
+    paths.ensure()
+    alignment = sync.measure(config, source, sound, paths.cache)
+
+    block: dict[str, Any] = {
+        "path": str(sound),
+        "alignment": alignment.as_dict(),
+        "used": alignment.confident,
+        "alignedFile": None,
+    }
+
+    if not alignment.confident:
+        validation["warnings"].append(
+            f"A separate audio file was given but is NOT being used: "
+            f"{alignment.reason}. The camera's own track is used instead."
+        )
+        return block
+
+    media.align_audio(
+        config,
+        sound,
+        paths.aligned_audio,
+        offset=alignment.offsetSeconds,
+        duration=duration,
+    )
+    # A wav extracted from the camera track on an earlier run would be
+    # silently reused; it describes different sound.
+    paths.audio_wav.unlink(missing_ok=True)
+    block["alignedFile"] = str(paths.aligned_audio)
+    validation["warnings"].append(
+        f"Using the separate recording for sound, offset {alignment.offsetSeconds:+.3f}s "
+        f"(match {alignment.correlation:.2f}). Transcription, silence and the cut all "
+        "read it instead of the camera track."
+    )
+    return block
+
+
+def run(
+    config: dict,
+    source: Path,
+    paths: ProjectPaths,
+    external_audio: Path | None = None,
+) -> dict[str, Any]:
     """Probe the source and write the metadata artefact."""
     if not source.exists():
         raise FileNotFoundError(f"Source video not found: {source}")
@@ -245,5 +305,10 @@ def run(config: dict, source: Path, paths: ProjectPaths) -> dict[str, Any]:
     }
 
     paths.ensure()
+    if external_audio is not None:
+        payload["externalAudio"] = _align_external_audio(
+            config, source, external_audio, paths, duration or 0.0, payload["validation"]
+        )
+
     write_json(paths.metadata, payload)
     return payload

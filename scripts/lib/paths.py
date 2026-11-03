@@ -76,6 +76,11 @@ class ProjectPaths:
         return self.output / "rough-cut.mp4"
 
     @property
+    def aligned_audio(self) -> Path:
+        """A separately recorded soundtrack, put on the picture's timeline."""
+        return self.cache / "audio-aligned.m4a"
+
+    @property
     def matte_video(self) -> Path:
         """Greyscale video: luma IS the alpha. See s07_person_matte."""
         return self.cache / "matte.mp4"
@@ -101,3 +106,15 @@ def project_paths(source: Path, slug: str | None = None) -> ProjectPaths:
         review=root / "review",
         output=root / "output",
     )
+
+
+def audio_source(metadata: dict, fallback: Path) -> Path:
+    """The media to pull audio from: a separate recording if one was aligned.
+
+    Everything downstream asks this rather than reaching for the video, so a
+    dual-system soundtrack reaches transcription, silence detection AND the
+    cut, instead of only whichever stage remembered to look.
+    """
+    external = metadata.get("externalAudio") or {}
+    aligned = external.get("alignedFile")
+    return Path(aligned) if aligned else fallback

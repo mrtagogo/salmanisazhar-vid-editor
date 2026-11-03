@@ -29,7 +29,7 @@ from typing import Any
 from ..lib import media
 from ..lib.config import get
 from ..lib.jsonio import read_json, rounded, utc_now, write_json
-from ..lib.paths import ProjectPaths
+from ..lib.paths import ProjectPaths, audio_source
 from .s04_edl import STATUS_AUTO, STATUS_REVIEW, _build_plan, cutting_profile
 
 SCHEMA = "tadabbur-motion/rough-cut@1"
@@ -58,14 +58,14 @@ def _require_approval(edl: dict, edl_path: Path) -> None:
     )
 
 
-def _filtergraph(keep_ranges: list[dict]) -> str:
+def _filtergraph(keep_ranges: list[dict], audio_input: int = 0) -> str:
     """One trim per kept range, video and audio, concatenated in order."""
     parts: list[str] = []
     for index, keep in enumerate(keep_ranges):
         start, end = keep["start"], keep["end"]
         parts.append(
             f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[v{index}];"
-            f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[a{index}]"
+            f"[{audio_input}:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[a{index}]"
         )
     streams = "".join(f"[v{i}][a{i}]" for i in range(len(keep_ranges)))
     parts.append(f"{streams}concat=n={len(keep_ranges)}:v=1:a=1[vout][aout]")
@@ -98,12 +98,22 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
     settings = get(config, "output.roughCut", {})
     paths.ensure()
 
+    # Sound may come from a separate recording, already put on the picture's
+    # timeline by ingest. If it does, it is a second input and the cut takes
+    # its audio from there.
+    sound = audio_source(metadata, source)
+    inputs = ["-i", str(source)]
+    audio_input = 0
+    if sound != source:
+        inputs += ["-i", str(sound)]
+        audio_input = 1
+
     media.run(
         [
             str(media.ffmpeg_bin(config)),
             "-hide_banner", "-nostdin", "-y",
-            "-i", str(source),
-            "-filter_complex", _filtergraph(keep_ranges),
+            *inputs,
+            "-filter_complex", _filtergraph(keep_ranges, audio_input),
             "-map", "[vout]", "-map", "[aout]",
             "-c:v", "libx264",
             "-preset", str(settings.get("preset", "medium")),
@@ -139,6 +149,7 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
         "approvedAt": (edl.get("approval") or {}).get("approvedAt"),
         "source": metadata["source"],
         "roughCut": str(paths.rough_cut),
+        "soundFrom": str(sound),
         "sourceDurationSeconds": rounded(duration),
         "expectedDurationSeconds": rounded(kept),
         "actualDurationSeconds": rounded(actual),

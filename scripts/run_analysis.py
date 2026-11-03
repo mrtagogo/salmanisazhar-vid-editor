@@ -171,6 +171,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--input", help="Source video. Defaults to the single file in input/.")
     parser.add_argument("--slug", help="Project folder name. Defaults to the filename.")
+    parser.add_argument(
+        "--audio",
+        help=(
+            "A separately recorded soundtrack for the same take. Its offset is "
+            "measured, not asked for, and it is refused if the measurement is not "
+            "trustworthy."
+        ),
+    )
     parser.add_argument("--only", help=f"Comma-separated subset of: {','.join(STAGE_ORDER)}")
     parser.add_argument("--start-from", help="Run from this stage to the end.")
     parser.add_argument(
@@ -199,11 +207,17 @@ def main(argv: list[str] | None = None) -> int:
         if flag:
             config["analysis"]["transcription"][key] = flag
     source = _resolve_source(args.input)
+    external_audio = Path(args.audio).resolve() if args.audio else None
+    if external_audio is not None and not external_audio.is_file():
+        raise SystemExit(f"--audio file not found: {external_audio}")
     paths = project_paths(source, args.slug)
     paths.ensure()
 
     stages: dict[str, tuple[Callable[..., dict], Path]] = {
-        "ingest": (lambda: s01_ingest.run(config, source, paths), paths.metadata),
+        "ingest": (
+            lambda: s01_ingest.run(config, source, paths, external_audio=external_audio),
+            paths.metadata,
+        ),
         "assets": (lambda: stage_assets.run(config, paths, source), paths.asset_manifest),
         "transcribe": (lambda: s02_transcribe.run(config, paths), paths.transcript),
         "silence": (lambda: s03_silence.run(config, paths), paths.silence),
@@ -218,6 +232,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Tadabbur Motion — analysis")
     print(f"  source : {source}")
+    if external_audio:
+        print(f"  audio  : {external_audio}")
     print(f"  project: {paths.root}")
     print(f"  stages : {', '.join(selected)}")
     print()

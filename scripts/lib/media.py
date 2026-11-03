@@ -258,6 +258,51 @@ def frame_encoder(
                 )
 
 
+def align_audio(
+    config: dict,
+    sound: Path,
+    destination: Path,
+    *,
+    offset: float,
+    duration: float,
+) -> Path:
+    """Write `sound` onto the picture's timeline and nothing else.
+
+    `offset` is how far AHEAD the separate recording is: at picture time t the
+    same moment sits at t + offset in the recording. A positive offset means
+    skipping that much from its start; a negative one means it began after the
+    camera did, so silence is prepended rather than guessing what was said.
+
+    The result is padded or trimmed to the picture's exact duration, so every
+    stage downstream can treat it as if the camera had recorded it.
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    settings = get(config, "analysis.audioExtract", {})
+
+    if offset >= 0:
+        pre = ["-ss", f"{offset:.4f}"]
+        filters = "apad"
+    else:
+        pre = []
+        filters = f"adelay={int(round(-offset * 1000))}:all=1,apad"
+
+    run(
+        [
+            str(ffmpeg_bin(config)),
+            "-hide_banner", "-nostdin", "-y",
+            *pre,
+            "-i", str(sound),
+            "-af", filters,
+            "-t", f"{duration:.4f}",
+            "-ac", str(settings.get("channels", 1) if destination.suffix == ".wav" else 2),
+            "-c:a", "pcm_s16le" if destination.suffix == ".wav" else "aac",
+            *(["-ar", str(settings.get("sampleRate", 16000))] if destination.suffix == ".wav" else ["-b:a", "192k"]),
+            str(destination),
+        ]
+    )
+    return destination
+
+
 _SILENCE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
 _SILENCE_END = re.compile(r"silence_end:\s*(-?[\d.]+)")
 

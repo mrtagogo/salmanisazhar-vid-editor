@@ -56,7 +56,7 @@ tests/
 projects/<slug>/
   data/       01-metadata, 02-transcript, 03-silence, 04-edl,
               06-face-track, 07-person-matte, 08-rough-cut, asset-manifest
-  cache/      extracted 16 kHz mono audio, matte.mp4
+  cache/      extracted 16 kHz mono audio, audio-aligned.m4a, matte.mp4
   review/     review-report.md
   output/     rough-cut.mp4
 ```
@@ -126,10 +126,25 @@ Or name the file explicitly:
 python -m scripts.run_analysis --input "input/kajian-01.mp4"
 ```
 
+If the sound was recorded separately — a phone or recorder closer to the
+speaker, while the camera track is only a guide — give it too:
+
+```bash
+python -m scripts.run_analysis --input "input/kajian-01.mp4" --audio "input/kajian-01-voice.m4a"
+```
+
+The offset is **measured, not asked for**, by matching the shape of loud and
+quiet in both recordings. If the two are not the same take, or the clocks
+drift, the audio is refused and the camera track is used instead — a
+plausible-but-wrong offset would desynchronise every word while still looking
+like it worked. Transcription, silence detection and the cut all then read the
+aligned soundtrack.
+
 Useful flags:
 
 | Flag | Purpose |
 | --- | --- |
+| `--audio FILE` | A separately recorded soundtrack for the same take |
 | `--slug NAME` | Project folder name (defaults to the filename) |
 | `--only ingest,silence` | Run a subset of stages |
 | `--start-from edl` | Re-run from one stage to the end |
@@ -206,6 +221,10 @@ python -m tests.test_transliteration # 40 checks — scripture the transcript lo
 
 ```bash
 python -m tests.test_rough_cut       # 22 checks — the approval gate and the cut
+```
+
+```bash
+python -m tests.test_sync            # 16 checks — aligning a separate soundtrack
 ```
 
 `test_edl_logic` runs 35 deterministic checks over a hand-built Indonesian

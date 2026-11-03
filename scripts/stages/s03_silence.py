@@ -13,7 +13,7 @@ from typing import Any
 from ..lib import media
 from ..lib.config import get
 from ..lib.jsonio import read_json, rounded, utc_now, write_json
-from ..lib.paths import ProjectPaths
+from ..lib.paths import ProjectPaths, audio_source
 
 SCHEMA = "tadabbur-motion/silence@1"
 
@@ -26,7 +26,7 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
 
     paths.ensure()
     if not paths.audio_wav.exists():
-        media.extract_audio(config, source, paths.audio_wav)
+        media.extract_audio(config, audio_source(metadata, source), paths.audio_wav)
 
     raw_spans = media.detect_silence(config, paths.audio_wav, duration)
 
