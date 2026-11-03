@@ -65,8 +65,11 @@ only at the composition layer (not built yet).
 - **FFmpeg / FFprobe.** `winget install Gyan.FFmpeg`. If it is not on PATH,
   pin the absolute paths in `engine.config.local.json` under `tools`.
 - **Python** with `faster-whisper`: `python -m pip install faster-whisper`.
-- **Node** is not used yet. There is intentionally no `package.json`:
-  Remotion is part of a later milestone and adding it now would be dead weight.
+- **Node 22+** for the composition layer: `npm install`. Remotion and React
+  are pinned to exact versions (`remotion` 4.0.534, `react` 19.1.1) so they
+  stay aligned with the effects library this project borrows from. Only the
+  packages actually in use are installed — no three.js or GSAP until effects
+  are copied in.
 
 ### GPU
 
@@ -182,6 +185,31 @@ accuracy. Indonesian and Arabic behaviour is covered by `test_edl_logic.py`
 and awaits a real recording.
 
 ---
+
+## Composition layer (Remotion)
+
+Only the Arabic groundwork exists so far. Compositions for the actual video
+come later, and depend on an approved EDL.
+
+```bash
+npm run proof:arabic   # render the Arabic shaping proof to out/
+npm run studio         # open Remotion Studio
+```
+
+| Path | Purpose |
+| --- | --- |
+| `src/config/fonts.ts` | Typefaces, with Arabic subsets declared explicitly |
+| `src/config/theme.ts` | Design tokens — the only place a colour may be defined |
+| `src/proofs/ArabicShapingProof.tsx` | Renders hard Arabic cases for human inspection |
+
+Arabic rendering is **verified**, not assumed — see
+[`docs/arabic-shaping.md`](docs/arabic-shaping.md) for the rendered proof and
+what it turned up. The short version: a font without an Arabic subset still
+renders Arabic by falling back to a system face, so missing coverage never
+looks broken, it just differs per machine.
+
+Frame sizes come from `engine.config.json`, so the Python and TypeScript sides
+cannot drift. The composition layer is the only place that deals in frames.
 
 ## Not implemented yet
 
