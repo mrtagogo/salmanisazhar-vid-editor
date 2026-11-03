@@ -43,7 +43,10 @@ from .stages import (
 # "cut" is deliberately NOT in the default run. Everything before it is
 # analysis and can be re-run freely; cutting needs a human approval first,
 # so it is asked for by name: --only cut
-STAGE_ORDER = ("ingest", "assets", "transcribe", "silence", "edl", "report", "track", "matte", "cut")
+# The face track runs before the report so its findings can appear in it.
+# The matte stays after: it is the slow one, and nothing in the report
+# depends on it.
+STAGE_ORDER = ("ingest", "assets", "transcribe", "silence", "edl", "track", "report", "matte", "cut")
 DEFAULT_STAGES = STAGE_ORDER[:-1]
 
 MEDIA_SUFFIXES = {".mp4", ".mov", ".mkv", ".m4v", ".avi", ".mts", ".webm"}
@@ -124,7 +127,8 @@ def _summarize(stage: str, result: dict[str, Any]) -> str:
         stats = result["stats"]
         return (
             f"{result['frames']} frames, coverage {stats['coverage'] * 100:.1f}%, "
-            f"{stats['gapCount']} gap(s), mean score {stats['meanScore']}"
+            f"{stats['gapCount']} gap(s), mean score {stats['meanScore']}, "
+            f"{stats.get('lookingAwayCount', 0)} look-away span(s)"
         )
     if stage == "cut":
         return (

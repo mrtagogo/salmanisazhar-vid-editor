@@ -18,6 +18,7 @@ The BALANCED standard, expressed concretely:
 
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 from typing import Any
 
 from ..lib.config import cutting_profile, get
@@ -596,6 +597,99 @@ def _hesitation_proposals(
     return proposals
 
 
+def _retake_proposals(
+    transcript: dict, protected: list[dict], profile: dict
+) -> list[dict[str, Any]]:
+    """Propose dropping a botched take when a sentence is said again.
+
+    The existing repetition rule works on short n-grams a moment apart — a
+    stutter, a doubled word. It cannot see the thing that actually happens
+    while recording: a whole sentence delivered, fumbled, and delivered again
+    several seconds later.
+
+    Always REVIEW, never auto. Deliberate repetition is a real rhetorical
+    device, and this engine cannot tell "I said that wrong" from "I said that
+    twice on purpose". Only the person who spoke it can.
+
+    What is proposed for removal is the FIRST delivery and everything up to
+    the second one, because a retake usually drags a wrong continuation along
+    behind it.
+    """
+    settings = profile.get("retakes", {})
+    if not settings.get("enabled", True):
+        return []
+
+    max_gap = float(settings.get("maxGapSeconds", 20.0))
+    min_words = int(settings.get("minWords", 3))
+    threshold = float(settings.get("similarity", 0.78))
+    max_between = int(settings.get("maxSegmentsBetween", 3))
+
+    segments = [
+        s
+        for s in transcript.get("segments", [])
+        if (s.get("text") or "").strip()
+    ]
+
+    proposals: list[dict[str, Any]] = []
+    counter = 0
+    claimed_until = -1.0
+
+    for i, first in enumerate(segments):
+        first_text = normalize_word(first["text"])
+        if len(first_text.split()) < min_words:
+            continue
+        if float(first["start"]) < claimed_until:
+            continue
+
+        for j in range(i + 1, min(len(segments), i + 2 + max_between)):
+            second = segments[j]
+            if float(second["start"]) - float(first["end"]) > max_gap:
+                break
+            second_text = normalize_word(second["text"])
+            if len(second_text.split()) < min_words:
+                continue
+
+            ratio = SequenceMatcher(None, first_text, second_text).ratio()
+            if ratio < threshold:
+                continue
+
+            start, end = float(first["start"]), float(second["start"])
+            if end - start < MIN_REMOVAL_SECONDS:
+                continue
+            if any(_overlaps(start, end, r["start"], r["end"]) for r in protected):
+                continue
+
+            dropped = " / ".join(
+                (segments[k].get("text") or "").strip() for k in range(i, j)
+            )
+            counter += 1
+            proposals.append(
+                {
+                    "id": f"take-{counter:04d}",
+                    "kind": "retake",
+                    "start": rounded(start),
+                    "end": rounded(end),
+                    "durationSeconds": rounded(end - start),
+                    "action": "cut",
+                    "status": STATUS_REVIEW,
+                    "reason": (
+                        f"This line is said again {end - start:.1f}s later, "
+                        f"{ratio * 100:.0f}% the same. Keeping the later delivery drops "
+                        f"“{dropped[:90]}”. If the repetition is deliberate, refuse this."
+                    ),
+                    "evidence": {
+                        "similarity": rounded(ratio, 3),
+                        "firstTake": dropped,
+                        "keptTake": (second.get("text") or "").strip(),
+                    },
+                }
+            )
+            claimed_until = end
+            break
+
+    return proposals
+
+
 def _speech_notes(transcript: dict, words: list[dict], config: dict) -> list[dict[str, Any]]:
     """Problems the editor should hear for themselves. These never cause cuts."""
     notes: list[dict[str, Any]] = []
@@ -825,6 +919,7 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
         _pause_proposals(words, silence_spans, duration, profile, protected)
         + _repetition_proposals(words, protected, profile)
         + _hesitation_proposals(words, protected, profile)
+        + _retake_proposals(transcript, protected, profile)
     )
     proposals = _flag_suspected(_clip_against_protected(raw_proposals, protected), suspected)
 

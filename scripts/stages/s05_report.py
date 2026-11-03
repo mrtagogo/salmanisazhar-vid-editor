@@ -274,6 +274,49 @@ def build(paths: ProjectPaths) -> str:
             "quotes scripture, read the transcript yourself.")
     add("")
 
+    # ---------------- Looking away ----------------
+    track_path = paths.face_track
+    track = read_json(track_path) if track_path.exists() else None
+    away = (track or {}).get("lookingAway") or []
+    add("## 5c. Moments not looking at the lens")
+    add("")
+    add("_Found from the head's direction, not from what was said. It reports where "
+        "the eyes went, never why: a glance at notes and a glance at someone walking "
+        "in look identical here._")
+    add("")
+    if not track:
+        add("_No face track yet. Run the `track` stage._")
+    elif not away:
+        add("_None found._")
+    else:
+        cover = [a for a in away if a.get("suggest") == "cover"]
+        trim = [a for a in away if a.get("suggest") == "trim"]
+        total = sum(a["durationSeconds"] for a in away)
+        add(f"{len(away)} span(s), {total:.1f}s in total — "
+            f"{len(cover)} while speaking, {len(trim)} during silence.")
+        add("")
+        add("| ID | From | To | Length | While speaking | Suggestion |")
+        add("| --- | --- | --- | --- | --- | --- |")
+        for a in away:
+            speaking = "yes" if a.get("speaking") else "no"
+            suggest = a.get("suggest", "—")
+            add(
+                f"| `{a['id']}` | {_clock(a['start'])} | {_clock(a['end'])} | "
+                f"{a['durationSeconds']:.1f}s | {speaking} | **{suggest}** |"
+            )
+        add("")
+        add("**cover** — the words are needed, so the picture has to be replaced "
+            "rather than removed. These are the B-roll slots.")
+        add("")
+        add("**trim** — nothing is being said, so the whole moment can go. Check "
+            "against section 2 first; some may already be proposed as pauses.")
+        if cover:
+            longest = max(cover, key=lambda a: a["durationSeconds"])
+            add("")
+            add(f"The longest one to cover is `{longest['id']}` at "
+                f"{_clock(longest['start'])}, {longest['durationSeconds']:.1f}s.")
+    add("")
+
     # ---------------- Speech notes ----------------
     add("## 6. Speech and transcription notes")
     add("")

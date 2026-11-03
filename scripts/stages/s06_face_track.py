@@ -110,6 +110,40 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
         ),
     )
 
+    attention = settings.get("attention", {}) or {}
+    looking_away = (
+        faces.attention_spans(
+            samples,
+            min_seconds=float(attention.get("minSeconds", 0.6)),
+            threshold=float(attention.get("threshold", 1.6)),
+        )
+        if attention.get("enabled", True)
+        else []
+    )
+
+    # A glance away while talking has to be COVERED; one during silence can
+    # simply be removed. That is the whole difference between needing B-roll
+    # and needing a cut, so it is decided here rather than left to a person
+    # cross-referencing two files.
+    if looking_away and paths.transcript.exists():
+        spoken = [
+            (float(seg["start"]), float(seg["end"]))
+            for seg in read_json(paths.transcript).get("segments", [])
+            if (seg.get("text") or "").strip()
+        ]
+        for span in looking_away:
+            talking = any(
+                e > span["start"] and s0 < span["end"] for s0, e in spoken
+            )
+            span["speaking"] = talking
+            span["suggest"] = "cover" if talking else "trim"
+            span["note"] = (
+                "Looking away while speaking: cover it with B-roll, since the words "
+                "are needed."
+                if talking
+                else "Looking away with nothing being said: this can simply be cut."
+            )
+
     min_coverage = float(settings.get("minCoverage", 0.8))
     warnings = _warnings(track, min_coverage, duration)
 
@@ -143,8 +177,21 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
             if track["stats"]["meanScore"] is not None
             else None,
             "gapCount": len(track["gaps"]),
+            "lookingAwayCount": len(looking_away),
+            "lookingAwaySeconds": rounded(
+                sum(a["durationSeconds"] for a in looking_away)
+            ),
+            "lookingAwayToCover": sum(
+                1 for a in looking_away if a.get("suggest") == "cover"
+            ),
+            "lookingAwayToTrim": sum(
+                1 for a in looking_away if a.get("suggest") == "trim"
+            ),
         },
         "warnings": warnings,
+        # Where the eyes left the lens. Said plainly: this reports direction,
+        # never intent, and it is a prompt to look rather than an instruction.
+        "lookingAway": looking_away,
         "gaps": [
             {
                 "startFrame": g["startFrame"],

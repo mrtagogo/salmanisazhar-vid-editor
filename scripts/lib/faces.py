@@ -47,13 +47,22 @@ DEFAULT_HEAD_TOP_ABOVE_CENTRE = 1.1
 
 @dataclass(frozen=True)
 class FaceSample:
-    """One detection, in source pixels."""
+    """One detection, in source pixels.
+
+    `yaw` and `eyeMouth` come from the detector's five landmarks and say
+    where the head is pointing: yaw is the nose off the eye midline, eyeMouth
+    is how far the mouth sits below the eyes. Both are in units of
+    eye-separation, so they do not change when the presenter moves nearer or
+    further from the camera.
+    """
 
     time: float
     cx: float
     cy: float
     w: float
     score: float
+    yaw: float = 0.0
+    eyeMouth: float = 0.0
 
 
 # --------------------------------------------------------------------------
@@ -136,6 +145,18 @@ def detect(config: dict, source: Path, *, width: int, height: int) -> list[FaceS
         # switching between them mid-sentence would swing the camera.
         best = max(faces, key=lambda f: float(f[2]) * float(f[3]))
         x, y, w, h = (float(best[0]), float(best[1]), float(best[2]), float(best[3]))
+
+        # Landmarks: right eye, left eye, nose, right mouth, left mouth.
+        yaw = eye_mouth = 0.0
+        if len(best) >= 14:
+            points = [(float(best[4 + 2 * k]), float(best[5 + 2 * k])) for k in range(5)]
+            (rx, ry), (lx, ly), (nx, _), (mrx, mry), (mlx, mly) = points
+            separation = abs(lx - rx)
+            if separation > 1e-6:
+                eye_x, eye_y = (rx + lx) / 2, (ry + ly) / 2
+                yaw = (nx - eye_x) / separation
+                eye_mouth = (((mry + mly) / 2) - eye_y) / separation
+
         samples.append(
             FaceSample(
                 time=index / sample_fps,
@@ -143,6 +164,8 @@ def detect(config: dict, source: Path, *, width: int, height: int) -> list[FaceS
                 cy=(y + h / 2) * scale_back,
                 w=w * scale_back,
                 score=float(best[14]) if len(best) > 14 else 1.0,
+                yaw=yaw,
+                eyeMouth=eye_mouth,
             )
         )
 
@@ -229,6 +252,117 @@ def _interpolate(samples: list[FaceSample], t: float) -> tuple[float, float, flo
         a.w + (b.w - a.w) * k,
         gap,
     )
+
+
+def _robust_z(values: list[float]) -> list[float]:
+    """Distance from the median in robust standard deviations.
+
+    Median and MAD rather than mean and standard deviation: the moments being
+    looked for are themselves outliers, and a mean would be dragged toward
+    them until they stopped standing out.
+    """
+    if not values:
+        return []
+    ordered = sorted(values)
+    median = ordered[len(ordered) // 2]
+    deviations = sorted(abs(v - median) for v in values)
+    mad = deviations[len(deviations) // 2]
+    # 1.4826 makes MAD comparable to a standard deviation for normal data.
+    scale = mad * 1.4826
+
+    # A degenerate MAD is not "nothing happened". If most of the signal sits
+    # at one value — a very still presenter — the MAD can be zero while a
+    # real excursion is sitting right there in the data. Returning zeros then
+    # would mean this check could never fire at all, which is a worse failure
+    # than a noisy one, so fall back to the ordinary spread.
+    if scale < 1e-9:
+        mean = sum(values) / len(values)
+        variance = sum((v - mean) ** 2 for v in values) / len(values)
+        scale = variance**0.5
+    if scale < 1e-9:
+        return [0.0] * len(values)
+    return [(v - median) / scale for v in values]
+
+
+def attention_spans(
+    samples: list[FaceSample],
+    *,
+    min_seconds: float = 0.6,
+    threshold: float = 1.6,
+    smooth_window: int = 5,
+) -> list[dict[str, Any]]:
+    """Stretches where the presenter is looking away from the lens.
+
+    Reading from notes shows up two ways at once: the head turns off-axis
+    (yaw) and tips down, which shortens the distance from eyes to mouth. Both
+    are measured against the presenter's OWN resting posture, not an absolute
+    idea of "facing forward", because where someone naturally sits relative to
+    their camera differs every time.
+
+    This says where the eyes went, never why. A glance at notes and a glance
+    at someone entering the room look identical here.
+    """
+    if len(samples) < 3:
+        return []
+
+    def moving_average(values: list[float]) -> list[float]:
+        half = max(1, smooth_window // 2)
+        out = []
+        for i in range(len(values)):
+            lo, hi = max(0, i - half), min(len(values), i + half + 1)
+            out.append(sum(values[lo:hi]) / (hi - lo))
+        return out
+
+    raw_yaw = [s.yaw for s in samples]
+    raw_tip = [s.eyeMouth for s in samples]
+
+    yaw = _robust_z(moving_average(raw_yaw))
+    tip = _robust_z(moving_average(raw_tip))
+    # Either signal alone is enough; a turn and a tip are both "not at the lens".
+    away = [max(abs(a), b) for a, b in zip(yaw, tip)]
+
+    # Smoothing steadies the edges of a span, but it also smears a single
+    # stray detection across the width of its window, which can make one
+    # frame of noise look like a second of looking away. So the boundaries
+    # come from the smoothed signal and the EVIDENCE comes from the raw one.
+    unsmoothed = [
+        max(abs(a), b) for a, b in zip(_robust_z(raw_yaw), _robust_z(raw_tip))
+    ]
+
+    spans: list[dict[str, Any]] = []
+    start: int | None = None
+    for i, value in enumerate(away):
+        if value > threshold and start is None:
+            start = i
+        elif value <= threshold and start is not None:
+            spans.append((start, i - 1))
+            start = None
+    if start is not None:
+        spans.append((start, len(away) - 1))
+
+    out: list[dict[str, Any]] = []
+    for index, (lo, hi) in enumerate(spans, start=1):
+        begin, finish = samples[lo].time, samples[hi].time
+        if finish - begin < min_seconds:
+            continue
+        # At least two independent observations, not one smeared by the filter.
+        if sum(1 for v in unsmoothed[lo : hi + 1] if v > threshold) < 2:
+            continue
+        out.append(
+            {
+                "id": f"away-{index:04d}",
+                "start": round(begin, 3),
+                "end": round(finish, 3),
+                "durationSeconds": round(finish - begin, 3),
+                "peak": round(max(away[lo : hi + 1]), 2),
+                "note": (
+                    "The presenter is not looking at the lens here. Often this is a "
+                    "glance at notes. It is a candidate for covering with B-roll, or "
+                    "for a cut if nothing is being said."
+                ),
+            }
+        )
+    return out
 
 
 def build_track(
@@ -343,6 +477,7 @@ __all__ = [
     "FaceTrackError",
     "MediaToolError",
     "alpha_for",
+    "attention_spans",
     "build_track",
     "detect",
     "ema",

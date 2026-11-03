@@ -1,26 +1,22 @@
 {
   "engine": "tadabbur-motion",
   "schemaVersion": 1,
-
   "editingIdentity": {
     "cutting": "balanced",
     "subtitles": "hybrid",
     "camera": "dynamic",
     "audio": "clean"
   },
-
   "tools": {
     "ffmpegPath": null,
     "ffprobePath": null
   },
-
   "analysis": {
     "audioExtract": {
       "sampleRate": 16000,
       "channels": 1,
       "codec": "pcm_s16le"
     },
-
     "transcription": {
       "model": "large-v3",
       "language": "id",
@@ -34,12 +30,10 @@
       "lowConfidenceWordThreshold": 0.55,
       "lowConfidenceSegmentLogprob": -0.85
     },
-
     "silence": {
       "noiseFloorDb": -32,
       "minSilenceSeconds": 0.3
     },
-
     "faceTrack": {
       "model": "models/face_detection_yunet_2023mar.onnx",
       "sampleFps": 10,
@@ -50,9 +44,13 @@
       "smoothingSeconds": 0.25,
       "maxGapSeconds": 0.5,
       "minCoverage": 0.8,
-      "headTopAboveCentre": 1.1
+      "headTopAboveCentre": 1.1,
+      "attention": {
+        "enabled": true,
+        "minSeconds": 0.6,
+        "threshold": 1.6
+      }
     },
-
     "personMatte": {
       "model": "models/rvm_mobilenetv3_fp32.onnx",
       "longEdge": 1280,
@@ -64,7 +62,6 @@
       "minMeanCoverage": 0.1
     }
   },
-
   "cutting": {
     "balanced": {
       "keepPauseSeconds": 0.6,
@@ -83,16 +80,33 @@
       "fillers": {
         "enabled": true,
         "action": "review"
+      },
+      "retakes": {
+        "enabled": true,
+        "maxGapSeconds": 20,
+        "minWords": 3,
+        "similarity": 0.78,
+        "maxSegmentsBetween": 3
       }
     }
   },
-
   "output": {
-    "portrait": { "width": 1080, "height": 1920, "fps": 30 },
-    "landscape": { "width": 1920, "height": 1080, "fps": 30 },
-    "roughCut": { "crf": 18, "preset": "medium", "audioBitrate": "192k" }
+    "portrait": {
+      "width": 1080,
+      "height": 1920,
+      "fps": 30
+    },
+    "landscape": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 30
+    },
+    "roughCut": {
+      "crf": 18,
+      "preset": "medium",
+      "audioBitrate": "192k"
+    }
   },
-
   "review": {
     "requireApprovalBeforeCutting": true
   }
