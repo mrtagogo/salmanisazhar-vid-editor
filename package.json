@@ -10,7 +10,9 @@
     "proof:arabic": "remotion still ArabicShapingProof out/arabic-shaping-proof.png --image-format=png",
     "proof:caption": "remotion still CaptionProof out/caption-proof.png --image-format=png",
     "proof:effects": "remotion still EffectsProof out/effects-proof.png --image-format=png",
-    "render": "remotion render"
+    "render": "remotion render",
+    "still": "remotion still Kajian",
+    "preview": "remotion render Kajian"
   },
   "dependencies": {
     "@remotion/cli": "4.0.534",

@@ -14,8 +14,12 @@ import engineConfig from '../engine.config.json';
 import { ArabicShapingProof } from './proofs/ArabicShapingProof';
 import { CaptionProof } from './proofs/CaptionProof';
 import { EffectsProof } from './proofs/EffectsProof';
+import { Kajian, loadProject } from './compositions/Kajian';
 
 const { portrait } = engineConfig.output;
+
+/** The prepared project the Kajian composition shows. */
+const SLUG = 'kajian-yusuf-sync';
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -33,6 +37,30 @@ export const RemotionRoot: React.FC = () => {
         height={2400}
         fps={portrait.fps}
         durationInFrames={1}
+      />
+
+      {/*
+        The talk itself. Its length is not written here: it comes from the
+        prepared project, so the composition cannot claim a duration the cut
+        does not have.
+      */}
+      <Composition
+        id="Kajian"
+        component={Kajian}
+        width={portrait.width}
+        height={portrait.height}
+        fps={portrait.fps}
+        durationInFrames={1}
+        defaultProps={{ slug: SLUG, showWithheld: true }}
+        calculateMetadata={async ({ props }) => {
+          const data = await loadProject(props.slug);
+          return {
+            durationInFrames: Math.max(1, Math.round(data.durationSeconds * data.fps)),
+            fps: data.fps,
+            width: data.width,
+            height: data.height,
+          };
+        }}
       />
 
       {/*

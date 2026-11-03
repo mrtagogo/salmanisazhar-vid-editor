@@ -34,3 +34,6 @@ out/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Media prepared for Remotion: proxies, regenerable from projects/
+public/
