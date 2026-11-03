@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -198,6 +199,62 @@ def sample_frames(
                 tail = "\n".join(text.strip().splitlines()[-20:])
                 raise MediaToolError(
                     f"Frame sampling failed (exit {code}):\n  {' '.join(args)}\n\n{tail}"
+                )
+
+
+@contextmanager
+def frame_encoder(
+    config: dict,
+    destination: Path,
+    *,
+    fps: float,
+    width: int,
+    height: int,
+    pix_fmt: str = "gray",
+    output_args: list[str] | None = None,
+) -> Iterator[Any]:
+    """Open an ffmpeg process that encodes raw frames written to it.
+
+    Yields the stdin write function. On leaving the block the pipe is closed
+    and ffmpeg is waited for, so a failed encode raises here rather than
+    leaving a half-written file that looks finished.
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    args = [
+        str(ffmpeg_bin(config)),
+        "-hide_banner",
+        "-nostdin",
+        "-y",
+        "-f", "rawvideo",
+        "-pix_fmt", pix_fmt,
+        "-s", f"{width}x{height}",
+        "-r", str(fps),
+        "-i", "-",
+        *(output_args or []),
+        str(destination),
+    ]
+
+    with tempfile.TemporaryFile(mode="w+b") as errfile:
+        proc = subprocess.Popen(args, stdin=subprocess.PIPE, stderr=errfile)
+        assert proc.stdin is not None
+        failed = False
+        try:
+            yield proc.stdin.write
+        except BaseException:
+            failed = True
+            raise
+        finally:
+            try:
+                proc.stdin.close()
+            except BrokenPipeError:
+                failed = True
+            code = proc.wait()
+            if code != 0 and not failed:
+                errfile.seek(0)
+                text = errfile.read().decode("utf-8", "replace")
+                tail = "\n".join(text.strip().splitlines()[-20:])
+                raise MediaToolError(
+                    f"Encoding failed (exit {code}):\n  {' '.join(args)}\n\n{tail}"
                 )
 
 

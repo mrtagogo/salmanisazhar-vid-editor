@@ -12,7 +12,10 @@ Six effects were taken from [facecammaxxing](https://github.com/aaksa/facecammax
 | `kinetic-caption` | Spoken words appear one at a time, keywords accented | face track |
 | `name-tag` | Lower-third pill with name and role | face track |
 | `bottom-fade` | Bottom of the frame darkens so captions read | — |
-| `text-behind` | A large word rises from behind the body | face track, **person matte** |
+| `text-behind` | A large word rises from behind the body | face track, person matte |
+
+Both passes now exist: [`docs/face-tracking.md`](face-tracking.md) and
+[`docs/person-matte.md`](person-matte.md).
 
 Reproduce the proofs with:
 
@@ -97,29 +100,24 @@ identical frame for frame.
 
 ## What is still missing
 
-The **face track** that five of the six effects need now exists — see
-[`docs/face-tracking.md`](face-tracking.md). One pass is still missing:
+Both analysis passes the effects depend on now exist — the face track and the
+person matte — so all six have what they declare they need. What is still
+missing is the **renderer**: the thing that puts footage, matte and effects on
+one timeline. That is milestone 2 and waits on an approved EDL.
 
-- **Person matte** — an alpha cut-out of the presenter. Without it a `Behind`
-  layer is not behind anything. `text-behind` places a word to straddle the top
-  of the head on the assumption that the body hides its lower half; with no
-  matte that same word lies across the presenter's face.
+Being allowed in general is not the same as working on one recording, and the
+code keeps those apart. `fromArtefact()` in
+[`src/lib/track.ts`](../src/lib/track.ts) and
+[`src/lib/matte.ts`](../src/lib/matte.ts) each refuse an artefact whose `ok`
+is false, and both carry `gaps` through. Inside a gap the engine found
+nothing: the face position is held rather than known, and a Behind layer is
+not behind anything. `coveredAt()` is how a composition asks before placing
+something there. The proof asserts both — that an unusable matte is refused,
+and that a moment inside a gap reports as uncovered.
 
-This gap is carried in code, not only here. Each effect declares what it
-needs, `AVAILABLE` in [`src/effects/index.ts`](../src/effects/index.ts) records
-what the engine can produce, and `unmetRequirements()` is what a composition
-must consult before using an effect. The proof asserts that `text-behind` is
-still refused for want of a matte, and that `lean-in` is now allowed.
-
-Being allowed in general is not the same as working on one recording.
-`fromArtefact()` in [`src/lib/track.ts`](../src/lib/track.ts) refuses a track
-whose `ok` is false, and passes `gaps` through: inside a gap the face position
-is held, not known, so an effect promising to stay off the face cannot keep
-that promise there.
-
-The proofs still run on `syntheticTrack()`, because there is still no footage
-in the repository to track. That function is for proofs and must never reach a
-render meant for publishing.
+The proofs still run on `syntheticTrack()` and a drawn stand-in, because
+there is still no footage in this repository. Those are for proofs and must
+never reach a render meant for publishing.
 
 There is also no renderer. These are the editorial moves; applying them to real
 footage is milestone 2, and waits on an approved EDL.

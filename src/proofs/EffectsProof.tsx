@@ -26,6 +26,7 @@ import { TEXT_BEHIND } from '../effects/TextBehind';
 import type { FxCtx, FxDef } from '../lib/core';
 import { e } from '../lib/ease';
 import { chin } from '../lib/layout';
+import { coveredAt, fromArtefact as matteFromArtefact } from '../lib/matte';
 import { useFontsReady } from '../lib/measure';
 import { isRtl } from '../lib/text';
 import { proofCtx } from './ctx';
@@ -168,24 +169,37 @@ function runChecks(): Check[] {
   add('expo.out is endpoint-exact', ends, '0.000 / 1.000', ends === '0.000 / 1.000');
 
   // --- requirements ---
-  const unmet = unmetRequirements('text-behind');
+  for (const name of ['text-behind', 'lean-in', 'bottom-fade']) {
+    const unmet = unmetRequirements(name);
+    add(`${name} has everything it needs`, unmet.join(', ') || 'none', 'none', unmet.length === 0);
+  }
+
+  // Both passes exist now, so the guard that matters has moved: a particular
+  // recording can still produce a matte too poor to use, and that must be
+  // refused rather than quietly accepted.
+  let refused = false;
+  try {
+    matteFromArtefact({
+      ok: false,
+      warnings: ['the presenter fills only 2% of the frame'],
+      matteVideo: 'cache/matte.mp4',
+      frames: 100,
+      gaps: [],
+    } as never);
+  } catch {
+    refused = true;
+  }
+  add('an unusable matte is refused, not accepted', String(refused), 'true', refused);
+
+  const gappy = { startSeconds: 1, endSeconds: 2 };
+  const matte = {
+    video: 'x', fps: 30, frames: 90, width: 720, height: 1280, gaps: [gappy],
+  };
   add(
-    'text-behind is still refused: no person matte',
-    unmet.join(', ') || 'none',
-    'personMatte',
-    unmet.length === 1 && unmet[0] === 'personMatte',
-  );
-  add(
-    'the face track is now available, so lean-in is allowed',
-    unmetRequirements('lean-in').join(', ') || 'none',
-    'none',
-    unmetRequirements('lean-in').length === 0,
-  );
-  add(
-    'bottom-fade needs nothing we lack',
-    unmetRequirements('bottom-fade').join(', ') || 'none',
-    'none',
-    unmetRequirements('bottom-fade').length === 0,
+    'a moment inside a matte gap is reported as uncovered',
+    `${coveredAt(matte, 0.5)} / ${coveredAt(matte, 1.5)}`,
+    'true / false',
+    coveredAt(matte, 0.5) && !coveredAt(matte, 1.5),
   );
 
   return checks;

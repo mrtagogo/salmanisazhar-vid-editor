@@ -58,12 +58,21 @@ class ProjectPaths:
         return self.data / "06-face-track.json"
 
     @property
+    def person_matte(self) -> Path:
+        return self.data / "07-person-matte.json"
+
+    @property
     def asset_manifest(self) -> Path:
         return self.data / "asset-manifest.json"
 
     @property
     def audio_wav(self) -> Path:
         return self.cache / "audio-16k-mono.wav"
+
+    @property
+    def matte_video(self) -> Path:
+        """Greyscale video: luma IS the alpha. See s07_person_matte."""
+        return self.cache / "matte.mp4"
 
     @property
     def review_report(self) -> Path:

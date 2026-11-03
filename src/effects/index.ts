@@ -58,12 +58,15 @@ export const resolveFx = (name: string) => {
  * fromArtefact() in src/lib/track.ts refuses an artefact whose `ok` is false,
  * and why gaps are carried through for the caller to reason about.
  *
- * `personMatte` is still false: nothing cuts the presenter out of the
- * background, so a Behind layer is not behind anything.
+ * `personMatte` is true as well: the matte stage writes a greyscale matte
+ * video. Same caveat — fromArtefact() in src/lib/matte.ts refuses an artefact
+ * whose `ok` is false, and coveredAt() answers whether the presenter was
+ * actually found at a given moment, because a Behind layer is only behind
+ * something while there is a body to hide it.
  */
 export const AVAILABLE: Record<Requirement, boolean> = {
   faceTrack: true,
-  personMatte: false,
+  personMatte: true,
 };
 
 /** The requirements an effect declares that cannot be met right now. */

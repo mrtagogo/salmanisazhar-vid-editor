@@ -50,6 +50,17 @@
       "maxGapSeconds": 0.5,
       "minCoverage": 0.8,
       "headTopAboveCentre": 0.75
+    },
+
+    "personMatte": {
+      "model": "models/rvm_mobilenetv3_fp32.onnx",
+      "longEdge": 1280,
+      "downsampleRatio": 0.4,
+      "threads": 0,
+      "crf": 14,
+      "preset": "medium",
+      "emptyCoverageBelow": 0.02,
+      "minMeanCoverage": 0.1
     }
   },
 

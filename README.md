@@ -51,11 +51,12 @@ tests/
   test_edl_logic.py         Deterministic checks on the editorial rules
   test_face_track.py        Face-track arithmetic, hand-built samples
   test_face_detection.py    Detection end to end, against a known trajectory
+  test_matte.py             Matting arithmetic, video round-trip, a real run
   make_test_clip.py         Generates a synthetic clip for end-to-end testing
 projects/<slug>/
   data/       01-metadata, 02-transcript, 03-silence, 04-edl,
-              06-face-track, asset-manifest
-  cache/      extracted 16 kHz mono audio
+              06-face-track, 07-person-matte, asset-manifest
+  cache/      extracted 16 kHz mono audio, matte.mp4
   review/     review-report.md
 ```
 
@@ -68,11 +69,12 @@ only at the composition layer (not built yet).
 
 - **FFmpeg / FFprobe.** `winget install Gyan.FFmpeg`. If it is not on PATH,
   pin the absolute paths in `engine.config.local.json` under `tools`.
-- **Python** with `faster-whisper` and `opencv-python`:
-  `python -m pip install faster-whisper opencv-python`.
-- **A face detection model** for the `track` stage. It is not committed; see
-  [`models/README.md`](models/README.md) for the one-line download and its
-  checksum.
+- **Python** with `faster-whisper`, `opencv-python` and `onnxruntime`:
+  `python -m pip install faster-whisper opencv-python onnxruntime`.
+- **Two model files**, for the `track` and `matte` stages. Neither is
+  committed; see [`models/README.md`](models/README.md) for the downloads and
+  their checksums. The matting model is GPL-3.0 — [`NOTICE`](NOTICE) explains
+  what that does and does not mean here.
 - **Node 22+** for the composition layer: `npm install`. Remotion and React
   are pinned to exact versions (`remotion` 4.0.534, `react` 19.1.1) so they
   stay aligned with the effects library this project borrows from. There are
@@ -134,10 +136,10 @@ Useful flags:
 | `--model`, `--language`, `--device` | Override transcription settings for a test run; the config file stays the production source of truth |
 
 Stages run in order:
-`ingest → assets → transcribe → silence → edl → report → track`.
-Face tracking runs last because it needs only the video, and it is the
-slowest stage — the approval checkpoint is ready to read while frames are
-still being chewed.
+`ingest → assets → transcribe → silence → edl → report → track → matte`.
+The two video stages run last because they need only the video, and they are
+the slowest — the approval checkpoint is ready to read while frames are still
+being chewed.
 The run stops immediately if validation finds a blocking problem, so a broken
 file never costs a transcription pass.
 
@@ -181,6 +183,10 @@ python -m tests.test_face_track      # 36 checks — face-track arithmetic
 
 ```bash
 python -m tests.test_face_detection  # 16 checks — detection, end to end
+```
+
+```bash
+python -m tests.test_matte           # 33 checks — matting, round-trip, real run
 ```
 
 `test_edl_logic` runs 35 deterministic checks over a hand-built Indonesian
@@ -252,21 +258,22 @@ still needs. `NOTICE` carries both upstream MIT notices.
 Frame sizes come from `engine.config.json`, so the Python and TypeScript sides
 cannot drift. The composition layer is the only place that deals in frames.
 
-### The remaining missing pass
+### The passes the effects depend on
 
-Five of the six effects need a **face track**. That now exists — see
-[`docs/face-tracking.md`](docs/face-tracking.md).
+Both now exist:
 
-`text-behind` also needs a **person matte**, an alpha cut-out of the
-presenter, and nothing produces one. Without it a `Behind` layer is not
-behind anything: the word lands across the presenter's face.
+- **Face track** — where the face is, frame by frame, for framing and for
+  keeping graphics off it. See [`docs/face-tracking.md`](docs/face-tracking.md).
+- **Person matte** — the presenter separated from the room, so a `Behind`
+  layer is genuinely behind them. See [`docs/person-matte.md`](docs/person-matte.md).
 
-This is enforced in code, not only written down. Every effect declares what it
-needs, `AVAILABLE` in `src/effects/index.ts` records what the engine can
-produce, and `unmetRequirements()` is what a composition must consult before
-using one. Separately, `fromArtefact()` in `src/lib/track.ts` refuses a face
-track whose `ok` is false, because a capability the engine has in general can
-still fail on one particular recording.
+Capability is not the same as a usable result on one recording, and the code
+keeps those apart. Every effect declares what it needs and `AVAILABLE` in
+`src/effects/index.ts` records what the engine can produce — but
+`fromArtefact()` in `src/lib/track.ts` and `src/lib/matte.ts` each refuse an
+artefact whose `ok` is false, and `coveredAt()` answers whether the presenter
+was actually found at a given moment. A gap is not a detail: a Behind layer
+is not behind anything there.
 
 ## Not implemented yet
 
@@ -276,6 +283,6 @@ landscape Remotion compositions, audio cleanup, rendering and final
 inspection. Portrait (1080×1920) and landscape (1920×1080) will be separate
 compositions — landscape will never be a crop of the portrait render.
 
-On the analysis side: the person-matte pass described above. On the
-composition side: the renderer that puts footage, matte and effects on one
-timeline. All of it waits on a real recording and one approved EDL.
+The renderer that puts footage, matte and effects on one timeline. Both
+analysis passes it depends on now exist; what remains is the compositing
+itself, and it waits on a real recording and one approved EDL.

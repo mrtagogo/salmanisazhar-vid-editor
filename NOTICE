@@ -53,6 +53,38 @@ What was deliberately NOT taken
     docs/arabic-shaping.md.
 
 
+Model files
+-----------
+
+No model weights are committed to this repository. They are downloaded
+separately; models/README.md carries each URL and checksum. Their licences
+are their own and are NOT covered by this project's MIT licence.
+
+  face_detection_yunet_2023mar.onnx
+      YuNet, from opencv_zoo. Apache-2.0.
+
+  rvm_mobilenetv3_fp32.onnx
+      RobustVideoMatting, from github.com/PeterL1n/RobustVideoMatting.
+      **GPL-3.0.**
+
+      This one was a deliberate choice, made by the repository owner with the
+      trade-off in front of them: the Apache-2.0 alternative (PPHumanSeg, also
+      in opencv_zoo) runs at 192x192 and produces a silhouette too soft for
+      fine edges, while RVM produces a true, temporally stable alpha.
+
+      What that means in practice is not settled here. The weights are not
+      distributed with this repository and are not linked into its code; they
+      are a data file the operator fetches and feeds to onnxruntime. Rendered
+      video is the output of running the model, not a copy of it. Anyone
+      planning to redistribute the weights, ship them inside a product, or
+      build a service on them should take their own advice rather than rely
+      on this paragraph.
+
+      To avoid the question entirely, set analysis.personMatte.model to a
+      permissively licensed matting model and re-run the matte stage. Nothing
+      in the engine depends on RVM specifically.
+
+
 -------------------------------------------------------------------------------
 facecammaxxing
 -------------------------------------------------------------------------------
