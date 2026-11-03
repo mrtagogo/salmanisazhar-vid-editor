@@ -1,6 +1,10 @@
 # Machine-specific paths (ffmpeg location differs per machine)
 engine.config.local.json
 
+# Source footage. Never committed: it is the presenter's own material, it is
+# large, and this repository is public.
+input/
+
 # Per-video working data: large, regenerable, and not shared
 projects/
 

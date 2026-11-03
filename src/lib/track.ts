@@ -98,9 +98,11 @@ export function syntheticTrack({
     const y = faceY + 0.008 * Math.sin((2 * Math.PI * t) / 4.7);
     const w = faceWidth * (1 + 0.012 * Math.sin((2 * Math.PI * t) / 5.3));
     face.push([x, y, w]);
-    // A head is roughly 1.5x as tall as it is wide; its top sits about 0.75 of
-    // a width above the eye line that `y` tracks.
-    top.push(y - (w * width * 0.75) / height);
+    // 1.1 face widths above the centre, matching the measured value the
+    // analysis side uses (see DEFAULT_HEAD_TOP_ABOVE_CENTRE in
+    // scripts/lib/faces.py). Keeping the two the same is what makes a proof
+    // rendered on this synthetic track representative of a real one.
+    top.push(y - (w * width * 1.1) / height);
   }
 
   return { fps, width, height, frames, duration: frames / fps, face, top };

@@ -28,11 +28,21 @@ class FaceTrackError(RuntimeError):
 
 # The detector returns a face box, which runs roughly from the brow to the
 # chin. The top of the HEAD — hair, and whatever is worn on it — is above that
-# and is never detected. This is how far above the box centre the crown is
-# assumed to be, in units of face width. It is an ESTIMATE, deliberately
-# generous, and it is the number to revisit first when real footage arrives:
-# a presenter in a peci or songkok has a taller head than this assumes.
-DEFAULT_HEAD_TOP_ABOVE_CENTRE = 0.75
+# and is never detected, so it has to be inferred: this is how far above the
+# box centre the crown sits, in face widths.
+#
+# MEASURED, not guessed. The first guess here was 0.75, and the first real
+# recording showed it landing 94 px inside the presenter's head — the line
+# crossed his peci instead of clearing it. The matte knows where the crown
+# actually is (its topmost solid pixel above the face), so it was used to
+# check the track: across 78 samples the real ratio was 1.10, with the middle
+# 80% between 1.06 and 1.16.
+#
+# Erring HIGH is the safe direction. Too high and a word placed to straddle
+# the crown floats a little above the head; too low and it lies across the
+# face, which the editorial rules forbid. Re-measure for a presenter who
+# wears nothing on their head — see docs/face-tracking.md.
+DEFAULT_HEAD_TOP_ABOVE_CENTRE = 1.1
 
 
 @dataclass(frozen=True)

@@ -78,8 +78,11 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
     source = Path(metadata["source"]["path"])
     video = metadata.get("video") or {}
 
-    width = video.get("width")
-    height = video.get("height")
+    # The DISPLAYED size, not the stored one: a phone-shot portrait clip is
+    # stored landscape with a rotation matrix, and ffmpeg applies that matrix
+    # on decode. Asking for the stored size squashes every frame.
+    width = video.get("displayWidth") or video.get("width")
+    height = video.get("displayHeight") or video.get("height")
     if not width or not height:
         raise faces.FaceTrackError(
             "01-metadata.json records no video size, so there is no video stream "

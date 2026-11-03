@@ -83,8 +83,9 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
     source = Path(metadata["source"]["path"])
     video = metadata.get("video") or {}
 
-    width = video.get("width")
-    height = video.get("height")
+    # The DISPLAYED size — see the same note in s06_face_track.
+    width = video.get("displayWidth") or video.get("width")
+    height = video.get("displayHeight") or video.get("height")
     if not width or not height:
         raise matte_lib.MatteError(
             "01-metadata.json records no video size, so there is nothing to matte."

@@ -88,13 +88,29 @@ that a frame corner is background and the middle of the body is solid.
 `_ref/` is a reference checkout and is not committed, so this group skips on
 a fresh clone. The arithmetic and round-trip groups still run.
 
-## What is not verified
+## On the presenter's own footage
 
-How well RVM handles **this** presenter, in **this** room. Backlighting, a
-dark garment against a dark wall, a busy background, hands crossing the face,
-a peci against a similar-toned wall — none of that is exercised. The artefact
-reports `meanCoverage`, gaps and warnings precisely so the first real
-recording can be judged quickly rather than trusted.
+A 2.6-minute recording — a white peci against a pale wall, glasses, a dark
+satin garment, a hand held up near the chin — came back clean: 4,665 frames,
+mean coverage 51.0% (min 50.4%, max 52.3%), no empty stretches, no warnings.
+Checked by eye at three moments, composited over a flat colour: the cap edge,
+the spectacle frames, the beard and the raised hand all cut correctly.
+
+The steadiness of that coverage figure is itself worth noting — it varies by
+under two points across the whole clip, which is what a stable matte looks
+like.
+
+The matte also turned out to be good enough to **calibrate the face track**:
+its topmost solid pixel is the real top of the head, which is how the crown
+estimate was corrected from a guess to a measurement. See
+[`docs/face-tracking.md`](face-tracking.md).
+
+## What is still not verified
+
+Backlighting, a dark garment against a dark wall, a busy background, hands
+crossing the face, a second person in shot, and any other room. The artefact
+reports `meanCoverage`, gaps and warnings precisely so a new recording can be
+judged quickly rather than trusted.
 
 Inside a gap the matte found nobody. A Behind layer is not behind anything
 there, and `coveredAt()` in [`src/lib/matte.ts`](../src/lib/matte.ts) is how a

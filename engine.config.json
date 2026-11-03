@@ -49,7 +49,7 @@
       "smoothingSeconds": 0.25,
       "maxGapSeconds": 0.5,
       "minCoverage": 0.8,
-      "headTopAboveCentre": 0.75
+      "headTopAboveCentre": 1.1
     },
 
     "personMatte": {

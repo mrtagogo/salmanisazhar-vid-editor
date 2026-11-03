@@ -73,14 +73,37 @@ def _video_block(stream: dict) -> dict[str, Any]:
     except (TypeError, ValueError):
         frame_count = None
 
+    rotation = _rotation(stream)
+
+    # The stored frame and the displayed picture are not the same thing. A
+    # phone held upright records 1920x1080 with a 90-degree display matrix,
+    # and ffmpeg applies that matrix on decode — so everything downstream sees
+    # 1080x1920. Recording only the stored size made the face track and the
+    # matte squash a portrait frame into a landscape box.
+    quarter_turn = rotation is not None and abs(int(rotation)) % 180 == 90
+    display_width = height if quarter_turn else width
+    display_height = width if quarter_turn else height
+
     return {
         "codec": stream.get("codec_name"),
         "profile": stream.get("profile"),
         "width": width,
         "height": height,
-        "aspectRatio": rounded(width / height, 4) if width and height else None,
+        # What a decoder hands you, rotation already applied. Use THESE for
+        # anything that works on pixels.
+        "displayWidth": display_width,
+        "displayHeight": display_height,
+        "aspectRatio": (
+            rounded(display_width / display_height, 4)
+            if display_width and display_height
+            else None
+        ),
         "orientation": (
-            None if not (width and height) else "portrait" if height > width else "landscape"
+            None
+            if not (display_width and display_height)
+            else "portrait"
+            if display_height > display_width
+            else "landscape"
         ),
         "rFrameRate": rounded(r_fps, 4) if r_fps else None,
         "avgFrameRate": rounded(avg_fps, 4) if avg_fps else None,
@@ -151,11 +174,16 @@ def _validate(
             )
         if video.get("rotationDegrees"):
             warnings.append(
-                f"Rotation metadata is {video['rotationDegrees']}°. Confirm the "
-                "picture is upright before framing decisions are made."
+                f"Rotation metadata is {video['rotationDegrees']}°, so the stored "
+                f"{video.get('width')}x{video.get('height')} frame displays as "
+                f"{video.get('displayWidth')}x{video.get('displayHeight')}. Stages that "
+                "work on pixels use the displayed size."
             )
 
-        width, height = video.get("width"), video.get("height")
+        # Measured against the DISPLAYED picture: a phone-shot portrait video
+        # stored as landscape needs no crop at all, and warning that it does
+        # would send someone looking for a problem that is not there.
+        width, height = video.get("displayWidth"), video.get("displayHeight")
         portrait = get(config, "output.portrait", {})
         target_w, target_h = portrait.get("width", 1080), portrait.get("height", 1920)
         if width and height and height < target_h:
