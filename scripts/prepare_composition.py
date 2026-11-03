@@ -113,6 +113,104 @@ def build_cues(transcript: dict, edl: dict, keep_ranges: list[dict]) -> list[dic
     return cues
 
 
+# --- the effect plan -------------------------------------------------------
+#
+# The editing identity says DYNAMIC camera: intentional framing and subtle
+# punch-ins, and explicitly NO random zoom. So every move below has to come
+# from something in the material, not from a timer.
+
+# A frame held still for longer than this goes dead on a phone screen.
+STATIC_STRETCH_SECONDS = 14.0
+# How far the slow push travels. Small on purpose: it should be felt, not seen.
+PUSH_ZOOM = 1.10
+
+# A pause this long was the speaker taking a beat before making a point, so
+# the line after it is worth leaning into.
+BEAT_SECONDS = 5.0
+PUNCH_ZOOM = 1.18
+PUNCH_SECONDS = 1.8
+# Caps, so "a punch-in where he made a point" cannot become a tic.
+MAX_PUNCHES = 4
+PUNCH_SPACING_SECONDS = 15.0
+
+
+def plan_effects(keep_ranges: list[dict], duration: float) -> list[dict[str, Any]]:
+    """Turn what the cut did into camera moves and a scrim.
+
+    Every entry is justified by something measured:
+
+    - the scrim runs throughout, because the subtitles sit low over footage
+      that can be any brightness;
+    - a slow push covers stretches the cut left untouched for a long time,
+      where the frame would otherwise sit dead;
+    - a punch-in lands where a long pause was removed, because that pause was
+      the speaker taking a beat before a point.
+    """
+    joins: list[dict[str, float]] = []
+    elapsed = 0.0
+    for index, keep in enumerate(keep_ranges):
+        length = float(keep["end"]) - float(keep["start"])
+        elapsed += length
+        if index + 1 < len(keep_ranges):
+            removed = float(keep_ranges[index + 1]["start"]) - float(keep["end"])
+            joins.append({"at": elapsed, "removed": removed})
+
+    # Punch-ins first: where they overlap a push, the punch should win, and
+    # the stage takes the first camera effect it finds.
+    effects: list[dict[str, Any]] = []
+    last = -PUNCH_SPACING_SECONDS
+    for join in sorted(joins, key=lambda j: -j["removed"]):
+        if len(effects) >= MAX_PUNCHES:
+            break
+        if join["removed"] < BEAT_SECONDS:
+            break
+        if join["at"] - last < PUNCH_SPACING_SECONDS or join["at"] + PUNCH_SECONDS > duration:
+            continue
+        effects.append(
+            {
+                "fx": "lean-in",
+                "start": round(join["at"], 3),
+                "end": round(join["at"] + PUNCH_SECONDS, 3),
+                "zoom": PUNCH_ZOOM,
+                "dof": 0,
+                "parallax": 0.5,
+            }
+        )
+        last = join["at"]
+    effects.sort(key=lambda e: e["start"])
+
+    taken = [(e["start"], e["end"]) for e in effects]
+    edges = [0.0] + [j["at"] for j in joins] + [duration]
+    for low, high in zip(edges, edges[1:]):
+        if high - low < STATIC_STRETCH_SECONDS:
+            continue
+        if any(a < high and low < b for a, b in taken):
+            continue
+        effects.append(
+            {
+                "fx": "slow-push",
+                "start": round(low, 3),
+                "end": round(high, 3),
+                "zoom": PUSH_ZOOM,
+                # No defocus: this is one person against a plain wall, and
+                # melting the wall would only draw attention to it.
+                "blur": 0,
+                "parallax": 1,
+            }
+        )
+
+    effects.append(
+        {
+            "fx": "bottom-fade",
+            "start": 0.0,
+            "end": round(duration, 3),
+            "amount": 0.55,
+            "from": 0.55,
+        }
+    )
+    return effects
+
+
 def retime_track(track: dict, keep_ranges: list[dict], frames: int, fps: float) -> dict[str, Any]:
     """Sample a per-frame face track onto the cut's frames.
 
@@ -240,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
         "soundFrom": Path(cut.get("soundFrom", "")).name or None,
         "cues": cues,
         "marks": marks,
+        "effects": plan_effects(keep_ranges, float(cut["actualDurationSeconds"])),
         "note": (
             "Timings are on the CUT timeline. Anything removed by the cut is "
             "absent, not moved."

@@ -12,19 +12,14 @@
  */
 
 import React from 'react';
-import {
-  AbsoluteFill,
-  OffthreadVideo,
-  staticFile,
-  useCurrentFrame,
-  useVideoConfig,
-} from 'remotion';
+import { AbsoluteFill, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 
 import { FONT } from '../config/fonts';
-import { LIFT_BLACKS, THEME } from '../config/theme';
+import { THEME } from '../config/theme';
 import { KINETIC_CAPTION } from '../effects/KineticCaption';
 import type { FxCtx, FxSpec } from '../lib/core';
 import { px } from '../lib/layout';
+import { Stage, type PlannedEffect } from './Stage';
 
 export type Cue = {
   start: number;
@@ -44,6 +39,8 @@ export type ProjectData = {
   durationSeconds: number;
   soundFrom: string | null;
   cues: Cue[];
+  /** The effect plan, on the cut's timeline. */
+  effects?: PlannedEffect[];
   track?: { face: number[][]; top: number[] };
   /** Proposed cuts, numbered as the decision sheet numbers them. */
   marks?: {
@@ -118,6 +115,13 @@ export type KajianProps = {
    * from `data` alone.
    */
   slug?: string;
+  /**
+   * Draw a notice where a subtitle was held back.
+   *
+   * OFF by default. A span that cannot be subtitled is simply left bare —
+   * a marker explaining the absence belongs in review, not in the finished
+   * piece, where it is just clutter nobody asked for.
+   */
   showWithheld?: boolean;
   /**
    * Filled in by calculateMetadata, not by hand.
@@ -132,7 +136,7 @@ export type KajianProps = {
   data?: ProjectData;
 };
 
-export const Kajian: React.FC<KajianProps> = ({ data, showWithheld = true }) => {
+export const Kajian: React.FC<KajianProps> = ({ data, showWithheld = false }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
 
@@ -175,15 +179,11 @@ export const Kajian: React.FC<KajianProps> = ({ data, showWithheld = true }) => 
         : null;
   }
 
+  // The subtitle sits between the effects' Front layer and their Screen
+  // layer, so a darkening scrim helps it read instead of covering it.
   return (
-    <AbsoluteFill style={{ backgroundColor: THEME.bg }}>
-      {/*
-        Footage blacks are lifted to about Tinta Malam. A plain brand frame
-        next to ungraded footage otherwise shows two different blacks at the
-        join, and the eye reads that seam before it reads the content.
-      */}
-      <OffthreadVideo src={staticFile(data.video)} style={{ filter: LIFT_BLACKS }} />
+    <Stage data={data} effects={data.effects ?? []} frame={frame}>
       {caption}
-    </AbsoluteFill>
+    </Stage>
   );
 };

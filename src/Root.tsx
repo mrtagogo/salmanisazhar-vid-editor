@@ -55,7 +55,7 @@ export const RemotionRoot: React.FC = () => {
         height={portrait.height}
         fps={portrait.fps}
         durationInFrames={1}
-        defaultProps={{ slug: SLUG, showWithheld: true }}
+        defaultProps={{ slug: SLUG }}
         calculateMetadata={async ({ props }) => {
           const data = await loadProject(String(props.slug ?? SLUG));
           return {
