@@ -30,6 +30,7 @@ from .lib.config import cutting_profile, load_config
 from .lib import retime
 from .lib.jsonio import read_json, utc_now, write_json
 from .lib.paths import PROJECTS_DIR
+from .stages.s04_edl import _build_plan
 
 SHEET = "keputusan-potong.md"
 MAP = "09-decision-numbers.json"
@@ -288,6 +289,56 @@ def parse_clock(text: str) -> float:
     return int(minutes) * 60 + float(seconds)
 
 
+# A surviving scrap of speech shorter than this is not a word, it is a click.
+MIN_FRAGMENT_SECONDS = 0.3
+# How far past the edge of a cut to look for an orphan left stranded by it.
+ORPHAN_REACH_SECONDS = 0.6
+
+
+def snap_to_words(
+    low: float, high: float, words: list[dict]
+) -> tuple[float, float, list[str]]:
+    """Widen a hand-cut span so it does not leave scraps of words behind.
+
+    A span typed from a timecode knows nothing about where words start and
+    stop. Cutting through the middle of one leaves a few frames of it on
+    screen, and a short word stranded beside the cut reads the same way: not
+    as speech, as a click.
+
+    Edges only ever move OUTWARD, so this can swallow a little more than was
+    asked for but never less.
+    """
+    notes: list[str] = []
+
+    for word in words:
+        start, end = float(word["start"]), float(word["end"])
+        text = word["word"].strip()
+
+        # The cut begins inside this word, leaving its head behind.
+        if start < low < end and (low - start) < MIN_FRAGMENT_SECONDS:
+            notes.append(f"swallowed {text!r} at the start ({low - start:.2f}s of it left over)")
+            low = start
+        # The cut ends inside this word, leaving its tail behind.
+        if start < high < end and (end - high) < MIN_FRAGMENT_SECONDS:
+            notes.append(f"swallowed {text!r} at the end ({end - high:.2f}s of it left over)")
+            high = end
+
+    # A whole word too short to survive on its own, stranded beside the cut.
+    for word in words:
+        start, end = float(word["start"]), float(word["end"])
+        if end - start >= MIN_FRAGMENT_SECONDS:
+            continue
+        text = word["word"].strip()
+        if 0 <= low - end <= ORPHAN_REACH_SECONDS:
+            notes.append(f"swallowed the stranded {text!r} before the cut")
+            low = start
+        elif 0 <= start - high <= ORPHAN_REACH_SECONDS:
+            notes.append(f"swallowed the stranded {text!r} after the cut")
+            high = end
+
+    return low, high, notes
+
+
 def add_manual(slug: str, span: str, on_cut: bool, by: str) -> int:
     """Add a cut the engine never proposed.
 
@@ -318,7 +369,25 @@ def add_manual(slug: str, span: str, on_cut: bool, by: str) -> int:
         source_high = retime.to_source(keep_ranges, max(low, high - 1e-3))
         if source_low is None or source_high is None:
             raise SystemExit(f"{span} falls outside the cut.")
+        # The source span is WIDER than what was asked for whenever it
+        # bridges material the cut already removes. Removing it takes out
+        # exactly the requested seconds of surviving footage — the merge in
+        # the plan absorbs the rest — but the raw length would read as a
+        # much larger cut than it is, so both numbers are kept.
+        effective = high - low
         low, high = source_low, source_high
+
+    if not on_cut:
+        effective = high - low
+
+    transcript = read_json(data / "02-transcript.json")
+    words = sorted(
+        (w for seg in transcript.get("segments", []) for w in (seg.get("words") or [])),
+        key=lambda w: w["start"],
+    )
+    low, high, snapped = snap_to_words(low, high, words)
+    for note in snapped:
+        print(f"  {note}")
 
     existing = sum(1 for p in edl["proposals"] if p.get("kind") == "manual")
     proposal = {
@@ -333,7 +402,15 @@ def add_manual(slug: str, span: str, on_cut: bool, by: str) -> int:
             f"Asked for by hand: {span}"
             + (" on the cut's timeline, mapped back to the source." if on_cut else ".")
         ),
-        "evidence": {"askedFor": span, "onCutTimeline": on_cut, "by": by},
+        "evidence": {
+            "askedFor": span,
+            "onCutTimeline": on_cut,
+            "by": by,
+            # What the viewer actually loses, as opposed to the span in
+            # source time needed to achieve it.
+            "effectiveSeconds": round(effective, 3),
+            "snappedToWords": snapped,
+        },
     }
 
     clash = [
@@ -350,9 +427,95 @@ def add_manual(slug: str, span: str, on_cut: bool, by: str) -> int:
     edl["proposals"].append(proposal)
     edl["proposals"].sort(key=lambda p: float(p["start"]))
     write_json(data / "04-edl.json", edl)
-    print(f"added {proposal['id']}: source {proposal['start']:.2f}-{proposal['end']:.2f}s "
-          f"({proposal['durationSeconds']:.2f}s)")
+    print(
+        f"added {proposal['id']}: source {proposal['start']:.2f}-{proposal['end']:.2f}s; "
+        f"removes {effective:.2f}s of what you can currently see"
+    )
     print("The decision sheet is now stale; re-make it before applying numbers.")
+    return 0
+
+
+def tidy(slug: str, by: str) -> int:
+    """Remove scraps of speech the cut strands, wherever they came from.
+
+    Snapping a hand-cut span to word boundaries only sees that span. A scrap
+    is usually created by ADJACENCY instead: a word survives, both its
+    neighbours are removed by different rules, and what is left is a tenth of
+    a second of speech between two joins. "bayangin aja" loses "bayangin" and
+    strands "aja"; a cut through "Dan" leaves six hundredths of it.
+
+    That can only be seen on the finished plan, so this looks there: any
+    surviving word too short to be heard as a word, with a join against it,
+    is swallowed.
+    """
+    data = PROJECTS_DIR / slug / "data"
+    edl = read_json(data / "04-edl.json")
+    transcript = read_json(data / "02-transcript.json")
+    profile = cutting_profile(load_config())
+
+    words = sorted(
+        (w for seg in transcript.get("segments", []) for w in (seg.get("words") or [])),
+        key=lambda w: w["start"],
+    )
+    plan = _build_plan(
+        edl["proposals"], float(edl["durationSeconds"]), include_review=False, profile=profile
+    )
+    keeps = plan["keepRanges"]
+
+    def kept_seconds(word: dict) -> float:
+        """How much of this word survives the cut.
+
+        Measured as an overlap, not by asking whether its midpoint survives:
+        a word the cut runs through loses its middle while a sliver of one
+        edge stays on screen, and the midpoint test calls that gone.
+        """
+        start, end = float(word["start"]), float(word["end"])
+        return sum(
+            max(0.0, min(end, float(k["end"])) - max(start, float(k["start"])))
+            for k in keeps
+        )
+
+    added = 0
+    for index, word in enumerate(words):
+        kept = kept_seconds(word)
+        # Nothing left, or enough left to be heard as a word.
+        if kept <= 0 or kept >= MIN_FRAGMENT_SECONDS:
+            continue
+        before_gone = index > 0 and kept_seconds(words[index - 1]) <= 0
+        after_gone = index + 1 < len(words) and kept_seconds(words[index + 1]) <= 0
+        if not (before_gone or after_gone):
+            continue
+        length = kept
+
+        added += 1
+        edl["proposals"].append(
+            {
+                "id": f"tidy-{added:04d}",
+                "kind": "manual",
+                "start": round(float(word["start"]), 3),
+                "end": round(float(word["end"]), 3),
+                "durationSeconds": round(length, 3),
+                "action": "cut",
+                "status": "auto",
+                "reason": (
+                    f"Only {length:.2f}s of {word['word'].strip()!r} survives the cut, "
+                    "which reads as a click rather than a word."
+                ),
+                "evidence": {"strandedBy": "tidy", "by": by},
+            }
+        )
+        print(f"  swallowing {word['word'].strip()!r} ({length:.2f}s) at {word['start']:.2f}s")
+
+    if not added:
+        print("nothing stranded.")
+        return 0
+
+    edl["proposals"].sort(key=lambda p: float(p["start"]))
+    write_json(data / "04-edl.json", edl)
+    after = _build_plan(
+        edl["proposals"], float(edl["durationSeconds"]), include_review=False, profile=profile
+    )
+    print(f"swallowed {added}; result {after['resultDurationSeconds']}s")
     return 0
 
 
@@ -454,6 +617,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     adder.add_argument("--by", default="presenter")
 
+    tidier = sub.add_parser("tidy", help="Swallow scraps of speech the cut strands.")
+    tidier.add_argument("--slug", required=True)
+    tidier.add_argument("--by", default="presenter")
+
     applier = sub.add_parser("apply", help="Apply an answer and approve the EDL.")
     applier.add_argument("--slug", required=True)
     applier.add_argument("--cut", help="Numbers to cut, e.g. 1,3,5-8")
@@ -471,6 +638,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "make":
         return make(args.slug)
+    if args.command == "tidy":
+        return tidy(args.slug, args.by)
     if args.command == "add":
         return add_manual(args.slug, args.span, not args.source, args.by)
     return apply(
