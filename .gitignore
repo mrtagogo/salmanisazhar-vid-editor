@@ -1,0 +1,32 @@
+# Machine-specific paths (ffmpeg location differs per machine)
+engine.config.local.json
+
+# Per-video working data: large, regenerable, and not shared
+projects/
+
+# Reference checkouts of third-party code. Not part of this repository:
+# code we actually use is copied into src/ and recorded in NOTICE.
+_ref/
+
+# Generated test fixtures — rebuild with: python -m tests.make_test_clip
+tests/fixtures/
+
+# Model weights are downloaded during setup, never committed
+engines/facecam-engine/models/
+*.onnx
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node / Remotion (milestone 2)
+node_modules/
+.remotion/
+out/
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store

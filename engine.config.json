@@ -1,0 +1,73 @@
+{
+  "engine": "tadabbur-motion",
+  "schemaVersion": 1,
+
+  "editingIdentity": {
+    "cutting": "balanced",
+    "subtitles": "hybrid",
+    "camera": "dynamic",
+    "audio": "clean"
+  },
+
+  "tools": {
+    "ffmpegPath": null,
+    "ffprobePath": null
+  },
+
+  "analysis": {
+    "audioExtract": {
+      "sampleRate": 16000,
+      "channels": 1,
+      "codec": "pcm_s16le"
+    },
+
+    "transcription": {
+      "model": "large-v3",
+      "language": "id",
+      "device": "auto",
+      "computeType": "auto",
+      "beamSize": 5,
+      "vadFilter": true,
+      "wordTimestamps": true,
+      "conditionOnPreviousText": false,
+      "lowConfidenceWordThreshold": 0.55,
+      "lowConfidenceSegmentLogprob": -0.85
+    },
+
+    "silence": {
+      "noiseFloorDb": -32,
+      "minSilenceSeconds": 0.3
+    }
+  },
+
+  "cutting": {
+    "balanced": {
+      "keepPauseSeconds": 0.6,
+      "reviewPauseSeconds": 1.3,
+      "autoTrimPauseSeconds": 2.5,
+      "edgePaddingSeconds": 0.08,
+      "minKeptSegmentSeconds": 0.4,
+      "protectPauseAfterQuestion": true,
+      "protectPauseBeforeProtectedRegion": true,
+      "repetition": {
+        "enabled": true,
+        "maxNgram": 5,
+        "maxGapSeconds": 0.9,
+        "autoApproveSingleWordStutter": true
+      },
+      "fillers": {
+        "enabled": true,
+        "action": "review"
+      }
+    }
+  },
+
+  "output": {
+    "portrait": { "width": 1080, "height": 1920, "fps": 30 },
+    "landscape": { "width": 1920, "height": 1080, "fps": 30 }
+  },
+
+  "review": {
+    "requireApprovalBeforeCutting": true
+  }
+}
