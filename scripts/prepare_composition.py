@@ -112,6 +112,15 @@ def retime_track(track: dict, keep_ranges: list[dict], frames: int, fps: float) 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="prepare_composition")
     parser.add_argument("--slug", required=True)
+    parser.add_argument(
+        "--source",
+        action="store_true",
+        help=(
+            "Prepare the UNCUT recording instead of the rough cut, with every "
+            "proposed cut marked by its number from the decision sheet. For "
+            "checking what a number refers to before approving it."
+        ),
+    )
     parser.add_argument("--crf", default="30", help="Proxy quality; lower is better.")
     parser.add_argument(
         "--track",
@@ -126,14 +135,32 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config()
     data = PROJECTS_DIR / args.slug / "data"
     cut_artefact = data / "08-rough-cut.json"
-    if not cut_artefact.is_file():
+    if not args.source and not cut_artefact.is_file():
         raise SystemExit(
-            f"No rough cut for {args.slug!r}. Approve the EDL and run --only cut first."
+            f"No rough cut for {args.slug!r}. Approve the EDL and run --only cut "
+            "first, or pass --source to review the uncut recording."
         )
 
-    cut = read_json(cut_artefact)
     transcript = read_json(data / "02-transcript.json")
     edl = read_json(data / "04-edl.json")
+
+    if args.source:
+        # The decision sheet numbers refer to the UNCUT recording, so reviewing
+        # them against a cut would be showing the wrong timeline. One keep-range
+        # covering everything makes the re-timing an identity.
+        metadata = read_json(data / "01-metadata.json")
+        video = metadata.get("video") or {}
+        duration = float(edl["durationSeconds"])
+        cut = {
+            "roughCut": metadata["source"]["path"],
+            "keepRanges": [{"start": 0.0, "end": duration}],
+            "actualDurationSeconds": duration,
+            "width": video.get("displayWidth") or video.get("width"),
+            "height": video.get("displayHeight") or video.get("height"),
+            "soundFrom": metadata["source"]["path"],
+        }
+    else:
+        cut = read_json(cut_artefact)
     keep_ranges = cut["keepRanges"]
 
     out = PUBLIC_DIR / args.slug
@@ -156,6 +183,30 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     cues = build_cues(transcript, edl, keep_ranges)
+
+    # Every proposed cut, numbered as the decision sheet numbers it, so a
+    # number on the sheet can be looked at rather than imagined.
+    numbers = {}
+    number_file = data / "09-decision-numbers.json"
+    if number_file.is_file():
+        numbers = {v: k for k, v in read_json(number_file)["numbers"].items()}
+    marks = []
+    for proposal in sorted(edl["proposals"], key=lambda p: float(p["start"])):
+        span = retime.clamp_to_cut(
+            keep_ranges, float(proposal["start"]), float(proposal["end"])
+        )
+        if span is None:
+            continue
+        marks.append(
+            {
+                "number": numbers.get(proposal["id"]),
+                "id": proposal["id"],
+                "kind": proposal.get("kind"),
+                "status": proposal["status"],
+                "start": round(span[0], 3),
+                "end": round(span[1], 3),
+            }
+        )
     payload = {
         "slug": args.slug,
         "video": f"{args.slug}/video.mp4",
@@ -165,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         "durationSeconds": cut["actualDurationSeconds"],
         "soundFrom": Path(cut.get("soundFrom", "")).name or None,
         "cues": cues,
+        "marks": marks,
         "note": (
             "Timings are on the CUT timeline. Anything removed by the cut is "
             "absent, not moved."

@@ -15,11 +15,15 @@ import { ArabicShapingProof } from './proofs/ArabicShapingProof';
 import { CaptionProof } from './proofs/CaptionProof';
 import { EffectsProof } from './proofs/EffectsProof';
 import { Kajian, loadProject } from './compositions/Kajian';
+import { Review } from './compositions/Review';
 
 const { portrait } = engineConfig.output;
 
 /** The prepared project the Kajian composition shows. */
 const SLUG = 'kajian-yusuf-sync';
+
+/** The project being reviewed against its decision sheet. */
+const REVIEW_SLUG = 'kajian-02';
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -53,7 +57,7 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={1}
         defaultProps={{ slug: SLUG, showWithheld: true }}
         calculateMetadata={async ({ props }) => {
-          const data = await loadProject(props.slug);
+          const data = await loadProject(String(props.slug ?? SLUG));
           return {
             durationInFrames: Math.max(1, Math.round(data.durationSeconds * data.fps)),
             fps: data.fps,
@@ -62,6 +66,30 @@ export const RemotionRoot: React.FC = () => {
             // Hand the loaded project straight to the component, so it never
             // fetches anything itself.
             props: { ...props, data },
+          };
+        }}
+      />
+
+      {/*
+        The uncut recording with every proposed cut marked by its number, for
+        checking what a number on the decision sheet actually refers to.
+      */}
+      <Composition
+        id="Review"
+        component={Review}
+        width={portrait.width}
+        height={portrait.height}
+        fps={portrait.fps}
+        durationInFrames={1}
+        defaultProps={{ slug: REVIEW_SLUG }}
+        calculateMetadata={async ({ props }) => {
+          const data = await loadProject((props as { slug: string }).slug);
+          return {
+            durationInFrames: Math.max(1, Math.round(data.durationSeconds * data.fps)),
+            fps: data.fps,
+            width: data.width,
+            height: data.height,
+            props: { data, marks: data.marks ?? [] },
           };
         }}
       />

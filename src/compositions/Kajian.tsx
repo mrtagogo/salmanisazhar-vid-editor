@@ -45,6 +45,15 @@ export type ProjectData = {
   soundFrom: string | null;
   cues: Cue[];
   track?: { face: number[][]; top: number[] };
+  /** Proposed cuts, numbered as the decision sheet numbers them. */
+  marks?: {
+    number: string | null;
+    id: string;
+    kind: string | null;
+    status: string;
+    start: number;
+    end: number;
+  }[];
 };
 
 export const loadProject = (slug: string): Promise<ProjectData> =>
@@ -103,8 +112,12 @@ const Withheld: React.FC<{ c: FxCtx; reason: string }> = ({ c, reason }) => (
 );
 
 export type KajianProps = {
-  /** Which prepared project to show. */
-  slug: string;
+  /**
+   * Which prepared project to show. Optional on the component itself: it is
+   * read by calculateMetadata to fetch the data, and the component then works
+   * from `data` alone.
+   */
+  slug?: string;
   showWithheld?: boolean;
   /**
    * Filled in by calculateMetadata, not by hand.
