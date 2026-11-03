@@ -87,7 +87,8 @@
         "minWords": 3,
         "similarity": 0.78,
         "maxSegmentsBetween": 3
-      }
+      },
+      "unheardSpeechSeconds": 0.4
     }
   },
   "output": {

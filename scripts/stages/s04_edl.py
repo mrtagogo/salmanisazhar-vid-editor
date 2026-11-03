@@ -175,12 +175,82 @@ def _flag_suspected(
             continue
         if proposal["status"] == STATUS_AUTO:
             proposal["status"] = STATUS_REVIEW
+        first = touching[0]
+        what = (
+            "may be scripture transliterated into Latin letters"
+            if first["reason"] == "possible_transliterated_scripture"
+            else "holds speech the transcript does not contain"
+        )
         proposal["reason"] = (
             proposal["reason"].rstrip()
-            + f" Overlaps {touching[0]['id']}, which may be scripture transliterated "
-            "into Latin letters — yours to decide, not the engine's."
+            + f" Overlaps {first['id']}, which {what} — yours to decide, not the "
+            "engine's."
         )
     return proposals
+
+
+def _longest_unsilent(start: float, end: float, silence_spans: list[dict]) -> tuple[float, float]:
+    """The longest continuous stretch inside a gap that is NOT acoustically quiet."""
+    quiet = sorted(
+        (max(start, float(s["start"])), min(end, float(s["end"])))
+        for s in silence_spans
+        if float(s["end"]) > start and float(s["start"]) < end
+    )
+    best = (start, start)
+    cursor = start
+    for lo, hi in quiet:
+        if lo - cursor > best[1] - best[0]:
+            best = (cursor, lo)
+        cursor = max(cursor, hi)
+    if end - cursor > best[1] - best[0]:
+        best = (cursor, end)
+    return best
+
+
+def _unheard_speech_spans(
+    words: list[dict], silence_spans: list[dict], min_seconds: float
+) -> list[dict[str, Any]]:
+    """Gaps between words that are not actually quiet.
+
+    A gap in the transcript is supposed to be a gap in the talking. When the
+    microphone says otherwise — a long stretch inside it that never drops to
+    the noise floor — then something was said there and never written down.
+
+    This is the case the over-long-word check cannot see. There, a word's
+    timing stretched to cover the missing speech; here the transcriber simply
+    left a hole, and every rule downstream reads that hole as a pause.
+
+    Found on the real recording: the presenter opens, fumbles, and says the
+    line again. The second delivery never reached the transcript, so the
+    engine saw a 4.2s pause after a question and protected it as rhetorical.
+    It was protecting speech it could not see.
+    """
+    spans: list[dict[str, Any]] = []
+    counter = 0
+    for index in range(len(words) - 1):
+        start, end = float(words[index]["end"]), float(words[index + 1]["start"])
+        if end - start <= min_seconds:
+            continue
+        lo, hi = _longest_unsilent(start, end, silence_spans)
+        if hi - lo < min_seconds:
+            continue
+        counter += 1
+        spans.append(
+            {
+                "id": f"sus-h{counter:04d}",
+                "start": rounded(lo),
+                "end": rounded(hi),
+                "reason": "untranscribed_speech",
+                "note": (
+                    f"{hi - lo:.2f}s of sound sits in a gap the transcript calls "
+                    "silence. Something was said here and never written down — a "
+                    "restarted sentence, an aside, or speech the model could not "
+                    "place. Listen before approving any cut that touches it."
+                ),
+                "text": "",
+            }
+        )
+    return spans
 
 
 def _protected_regions(transcript: dict, words: list[dict]) -> list[dict[str, Any]]:
@@ -362,6 +432,28 @@ def _pause_proposals(
             status = STATUS_REVIEW
         else:
             continue  # Between keep_air and review_at: deliberately left alone.
+
+        # Before anything else: is this gap actually quiet? A rhetorical pause
+        # is silence. If the microphone heard a long stretch of sound in here,
+        # this is not a pause at all, and neither protecting it as rhetorical
+        # nor trimming it as dead air describes what is really there.
+        unsilent_lo, unsilent_hi = _longest_unsilent(
+            gap["start"], gap["end"], silence_spans
+        )
+        unheard = unsilent_hi - unsilent_lo
+        if unheard >= float(profile.get("unheardSpeechSeconds", 0.4)):
+            reasons.append(
+                f"But {unheard:.2f}s of this gap is not quiet. Something was said "
+                "here that the transcript does not contain, so it is held back: the "
+                "engine will not cut speech it cannot read, and will not call this a "
+                "rhetorical pause either. Listen to it."
+            )
+            proposals.append(
+                _blocked_pause(
+                    f"pause-{index:04d}", gap, length, reasons, corroboration_ratio
+                )
+            )
+            continue
 
         # Rhetorical weight: a pause right after a question is doing work.
         # Only the *last* word of a question counts, so a word in the middle of
@@ -909,11 +1001,20 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
 
     words = _flatten_words(transcript)
     protected = _protected_regions(transcript, words)
-    suspected = _suspected_transliteration(words) + _untranscribed_spans(
-        words, float(get(config, "analysis.transcription.maxPlausibleWordSeconds", 2.0))
+    silence_spans = silence.get("spans", [])
+    suspected = (
+        _suspected_transliteration(words)
+        + _untranscribed_spans(
+            words,
+            float(get(config, "analysis.transcription.maxPlausibleWordSeconds", 2.0)),
+        )
+        + _unheard_speech_spans(
+            words,
+            silence_spans,
+            float(profile.get("unheardSpeechSeconds", 0.4)),
+        )
     )
     suspected.sort(key=lambda r: r["start"])
-    silence_spans = silence.get("spans", [])
 
     raw_proposals = (
         _pause_proposals(words, silence_spans, duration, profile, protected)
