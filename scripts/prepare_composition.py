@@ -86,6 +86,29 @@ def build_cues(transcript: dict, edl: dict, keep_ranges: list[dict]) -> list[dic
                     "protected": overlaps(protected),
                 }
             )
+    # A protected or suspected span with no words of its own would otherwise
+    # pass with no subtitle at all — silently absent rather than visibly
+    # withheld. Recovered scripture is exactly that case: it reaches the
+    # transcript as a segment with no word timings, so nothing above produces
+    # a cue for it, and the composition would show nothing without ever
+    # saying why.
+    for region in protected + suspected:
+        covered = any(
+            c["end"] > region["start"] and c["start"] < region["end"] for c in cues
+        )
+        if covered:
+            continue
+        cues.append(
+            {
+                "start": round(float(region["start"]), 3),
+                "end": round(float(region["end"]), 3),
+                "text": region.get("text", ""),
+                "words": [],
+                "suspected": [region["id"]] if region in suspected else [],
+                "protected": [region["id"]] if region in protected else [],
+            }
+        )
+
     cues.sort(key=lambda c: c["start"])
     return cues
 

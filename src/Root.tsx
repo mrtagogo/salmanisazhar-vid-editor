@@ -20,7 +20,7 @@ import { Review } from './compositions/Review';
 const { portrait } = engineConfig.output;
 
 /** The prepared project the Kajian composition shows. */
-const SLUG = 'kajian-yusuf-sync';
+const SLUG = 'kajian-02';
 
 /** The project being reviewed against its decision sheet. */
 const REVIEW_SLUG = 'kajian-02';
