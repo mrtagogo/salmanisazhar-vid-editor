@@ -23,7 +23,12 @@ from typing import Any
 from ..lib.config import cutting_profile, get
 from ..lib.jsonio import read_json, rounded, utc_now, write_json
 from ..lib.paths import ProjectPaths
-from ..lib.textutil import contains_arabic, is_hesitation, normalize_word
+from ..lib.textutil import (
+    contains_arabic,
+    is_hesitation,
+    normalize_word,
+    transliteration_runs,
+)
 
 SCHEMA = "tadabbur-motion/edl@1"
 
@@ -64,6 +69,117 @@ def _flatten_words(transcript: dict) -> list[dict[str, Any]]:
             )
     words.sort(key=lambda w: w["start"])
     return words
+
+
+def _suspected_transliteration(words: list[dict]) -> list[dict[str, Any]]:
+    """Spans that may be scripture written in Latin letters.
+
+    Scripture spoken aloud does not reach the transcript as Arabic script.
+    Asked for Indonesian, Whisper writes what it hears — a verse arrives as
+    "In nama ashku bathi wa huzni ilallah" — and _protected_regions, which
+    looks for Arabic characters, sees nothing at all.
+
+    These regions are SUSPECTED, never protected. A hit downgrades an
+    overlapping proposal to review; it never blocks one, and it never claims
+    the text is scripture. The detector recognises a shape, not a quotation,
+    and it is wrong in both directions: see docs/transliteration.md.
+    """
+    if not words:
+        return []
+
+    regions: list[dict[str, Any]] = []
+    for index, (lo, hi) in enumerate(
+        transliteration_runs([w["word"] for w in words]), start=1
+    ):
+        text = " ".join(w["word"].strip() for w in words[lo : hi + 1]).strip()
+        regions.append(
+            {
+                "id": f"sus-{index:04d}",
+                "start": float(words[lo]["start"]),
+                "end": float(words[hi]["end"]),
+                "reason": "possible_transliterated_scripture",
+                "note": (
+                    "These words look like Arabic written in Latin letters, which is "
+                    "how a spoken verse or hadith reaches the transcript. Nothing is "
+                    "blocked on this basis — but check whether this is a quotation "
+                    "before approving any cut that touches it, and verify the wording "
+                    "against an approved source before it appears on screen."
+                ),
+                "text": text,
+            }
+        )
+    return regions
+
+
+def _untranscribed_spans(
+    words: list[dict], max_word_seconds: float
+) -> list[dict[str, Any]]:
+    """Words held far too long: speech the transcriber heard but did not write.
+
+    Found on the presenter's first real recording. He recites a verse, and
+    Whisper collapsed roughly five and a half seconds of Arabic into the
+    single Indonesian word "hanya" — at confidence 1.00. Nothing else caught
+    it: there is no Arabic script, so the protected-region rule sees nothing;
+    there is no transliterated text either, so the marker detector sees
+    nothing; and the confidence signal says the word is certain, because the
+    word that WAS written is correct. Only the clock gives it away.
+
+    An Indonesian word takes well under a second. Several seconds means
+    something was spoken in that window and did not reach the transcript —
+    and a span with no words in it is exactly what the pause rules read as
+    dead air and offer to cut.
+    """
+    spans: list[dict[str, Any]] = []
+    for index, word in enumerate(words, start=1):
+        held = float(word["end"]) - float(word["start"])
+        if held <= max_word_seconds:
+            continue
+        spans.append(
+            {
+                "id": f"sus-u{index:04d}",
+                "start": float(word["start"]),
+                "end": float(word["end"]),
+                "reason": "untranscribed_speech",
+                "note": (
+                    f"The transcriber gave the single word {word['word'].strip()!r} "
+                    f"{held:.2f}s. A word does not last that long, so something was "
+                    "spoken here and never written down — recitation, a quotation in "
+                    "another language, or anything the model could not place. Listen "
+                    "before approving any cut that touches it."
+                ),
+                "text": word["word"].strip(),
+            }
+        )
+    return spans
+
+
+def _flag_suspected(
+    proposals: list[dict], suspected: list[dict]
+) -> list[dict[str, Any]]:
+    """Force a human decision on anything touching suspected scripture.
+
+    Only ever makes a proposal MORE cautious: auto becomes review, review and
+    blocked are left where they are.
+    """
+    if not suspected:
+        return proposals
+
+    for proposal in proposals:
+        touching = [
+            r
+            for r in suspected
+            if _overlaps(proposal["start"], proposal["end"], r["start"], r["end"])
+        ]
+        if not touching:
+            continue
+        if proposal["status"] == STATUS_AUTO:
+            proposal["status"] = STATUS_REVIEW
+        proposal["reason"] = (
+            proposal["reason"].rstrip()
+            + f" Overlaps {touching[0]['id']}, which may be scripture transliterated "
+            "into Latin letters — yours to decide, not the engine's."
+        )
+    return proposals
 
 
 def _protected_regions(transcript: dict, words: list[dict]) -> list[dict[str, Any]]:
@@ -699,6 +815,10 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
 
     words = _flatten_words(transcript)
     protected = _protected_regions(transcript, words)
+    suspected = _suspected_transliteration(words) + _untranscribed_spans(
+        words, float(get(config, "analysis.transcription.maxPlausibleWordSeconds", 2.0))
+    )
+    suspected.sort(key=lambda r: r["start"])
     silence_spans = silence.get("spans", [])
 
     raw_proposals = (
@@ -706,7 +826,7 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
         + _repetition_proposals(words, protected, profile)
         + _hesitation_proposals(words, protected, profile)
     )
-    proposals = _clip_against_protected(raw_proposals, protected)
+    proposals = _flag_suspected(_clip_against_protected(raw_proposals, protected), suspected)
 
     plan_auto = _build_plan(proposals, duration, include_review=False, profile=profile)
     plan_all = _build_plan(proposals, duration, include_review=True, profile=profile)
@@ -756,6 +876,9 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
             ),
         },
         "protectedRegions": protected,
+        # Not protected — suspected. Nothing here is blocked outright; these
+        # spans only force a human decision. See _suspected_transliteration.
+        "suspectedRegions": suspected,
         "proposals": proposals,
         "timeline": _timeline(proposals, duration),
         "plans": {"autoApprovedOnly": plan_auto, "allProposals": plan_all},

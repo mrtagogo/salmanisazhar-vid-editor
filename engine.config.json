@@ -30,6 +30,7 @@
       "vadFilter": true,
       "wordTimestamps": true,
       "conditionOnPreviousText": false,
+      "maxPlausibleWordSeconds": 2.0,
       "lowConfidenceWordThreshold": 0.55,
       "lowConfidenceSegmentLogprob": -0.85
     },

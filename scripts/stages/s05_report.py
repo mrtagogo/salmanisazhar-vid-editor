@@ -227,7 +227,51 @@ def build(paths: ProjectPaths) -> str:
         add("**Arabic and Qur'anic wording must be checked against an approved "
             "source by hand.** The engine does not generate, correct or complete it.")
     else:
-        add("_No Arabic or Qur'anic speech detected._")
+        add("_No Arabic **script** detected. That is not the same as no "
+            "scripture — see the next section._")
+    add("")
+
+    # ---------------- Suspected transliteration ----------------
+    suspected = edl.get("suspectedRegions") or []
+    add("## 5b. Spans to listen to before you approve anything")
+    add("")
+    add("_Section 5 finds Arabic **script**. Scripture spoken aloud rarely arrives "
+        "that way, so these two checks look for it by other means. Nothing here is "
+        "blocked — a span only forces the decision onto you._")
+    add("")
+    add("- **`possible_transliterated_scripture`** — words shaped like Arabic "
+        "written in Latin letters, which is how the transcriber usually renders a "
+        "recited verse.")
+    add("- **`untranscribed_speech`** — a single word held far longer than a word "
+        "can last. Something was spoken there and never written down. Confidence "
+        "does not catch this: the word that *was* written is correct, so it scores "
+        "high while seconds of speech go missing beside it.")
+    add("")
+    if suspected:
+        add(f"{len(suspected)} span(s) to look at.")
+        add("")
+        add("| ID | From | To | Why | Transcript says |")
+        add("| --- | --- | --- | --- | --- |")
+        for region in suspected:
+            text = region["text"].replace("|", "\\|")[:80]
+            add(
+                f"| `{region['id']}` | {_clock(region['start'])} | "
+                f"{_clock(region['end'])} | {region['reason']} | {text} |"
+            )
+        add("")
+        for region in suspected:
+            add(f"- **`{region['id']}`** — {region['note']}")
+        add("")
+        add("If a span turns out to be a quotation, treat it as protected: refuse "
+            "every cut that touches it, and check the wording against an approved "
+            "mushaf or hadith source before it appears on screen.")
+        add("")
+        add("**Both checks are fallible in both directions.** One recognises a "
+            "spelling pattern, the other a clock reading; neither understands what "
+            "was said. They are a prompt to listen, never a verdict.")
+    else:
+        add("_Nothing matched._ That is weak evidence, not a clearance: if the talk "
+            "quotes scripture, read the transcript yourself.")
     add("")
 
     # ---------------- Speech notes ----------------
