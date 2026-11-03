@@ -106,6 +106,13 @@
       "crf": 18,
       "preset": "medium",
       "audioBitrate": "192k"
+    },
+    "loudness": {
+      "enabled": true,
+      "targetI": -14,
+      "truePeak": -1.5,
+      "lra": 11,
+      "audioBitrate": "192k"
     }
   },
   "review": {

@@ -21,6 +21,7 @@ from __future__ import annotations
 from difflib import SequenceMatcher
 from typing import Any
 
+from ..lib.gaps import longest_unsilent
 from ..lib.config import cutting_profile, get
 from ..lib.jsonio import read_json, rounded, utc_now, write_json
 from ..lib.paths import ProjectPaths
@@ -189,24 +190,6 @@ def _flag_suspected(
     return proposals
 
 
-def _longest_unsilent(start: float, end: float, silence_spans: list[dict]) -> tuple[float, float]:
-    """The longest continuous stretch inside a gap that is NOT acoustically quiet."""
-    quiet = sorted(
-        (max(start, float(s["start"])), min(end, float(s["end"])))
-        for s in silence_spans
-        if float(s["end"]) > start and float(s["start"]) < end
-    )
-    best = (start, start)
-    cursor = start
-    for lo, hi in quiet:
-        if lo - cursor > best[1] - best[0]:
-            best = (cursor, lo)
-        cursor = max(cursor, hi)
-    if end - cursor > best[1] - best[0]:
-        best = (cursor, end)
-    return best
-
-
 def _unheard_speech_spans(
     words: list[dict], silence_spans: list[dict], min_seconds: float
 ) -> list[dict[str, Any]]:
@@ -231,7 +214,7 @@ def _unheard_speech_spans(
         start, end = float(words[index]["end"]), float(words[index + 1]["start"])
         if end - start <= min_seconds:
             continue
-        lo, hi = _longest_unsilent(start, end, silence_spans)
+        lo, hi = longest_unsilent(start, end, silence_spans)
         if hi - lo < min_seconds:
             continue
         counter += 1
@@ -437,7 +420,7 @@ def _pause_proposals(
         # is silence. If the microphone heard a long stretch of sound in here,
         # this is not a pause at all, and neither protecting it as rhetorical
         # nor trimming it as dead air describes what is really there.
-        unsilent_lo, unsilent_hi = _longest_unsilent(
+        unsilent_lo, unsilent_hi = longest_unsilent(
             gap["start"], gap["end"], silence_spans
         )
         unheard = unsilent_hi - unsilent_lo

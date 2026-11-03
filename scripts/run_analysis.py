@@ -29,6 +29,7 @@ from .stages import (
     s01_ingest,
     s02_transcribe,
     s03_silence,
+    s03b_recover,
     s04_edl,
     s05_report,
     s06_face_track,
@@ -46,7 +47,13 @@ from .stages import (
 # The face track runs before the report so its findings can appear in it.
 # The matte stays after: it is the slow one, and nothing in the report
 # depends on it.
-STAGE_ORDER = ("ingest", "assets", "transcribe", "silence", "edl", "track", "report", "matte", "cut")
+# "recover" runs after silence because it needs to know which gaps are
+# actually quiet, and before the EDL because what it finds has to be
+# protectable.
+STAGE_ORDER = (
+    "ingest", "assets", "transcribe", "silence", "recover", "edl",
+    "track", "report", "matte", "cut",
+)
 DEFAULT_STAGES = STAGE_ORDER[:-1]
 
 MEDIA_SUFFIXES = {".mp4", ".mov", ".mkv", ".m4v", ".avi", ".mts", ".webm"}
@@ -109,6 +116,14 @@ def _summarize(stage: str, result: dict[str, Any]) -> str:
             f"{stats['spanCount']} silent span(s), {stats['silentSeconds']}s "
             f"({(stats['silentRatio'] or 0) * 100:.1f}%)"
         )
+    if stage == "recover":
+        if not result["spansExamined"]:
+            return "no gaps with unheard sound"
+        return (
+            f"{result['spansExamined']} gap(s) examined, "
+            f"{len(result['recovered'])} recovered, "
+            f"{result.get('arabicFound', 0)} in Arabic script"
+        )
     if stage == "edl":
         stats = result["stats"]
         return (
@@ -131,9 +146,16 @@ def _summarize(stage: str, result: dict[str, Any]) -> str:
             f"{stats.get('lookingAwayCount', 0)} look-away span(s)"
         )
     if stage == "cut":
+        level = result.get("loudness")
+        levelled = (
+            ""
+            if not level
+            else f", {level['beforeI']} -> {level['afterI']} LUFS"
+        )
         return (
             f"{result['roughCut']} — {result['actualDurationSeconds']}s "
-            f"(was {result['sourceDurationSeconds']}s, removed {result['removedSeconds']}s)"
+            f"(was {result['sourceDurationSeconds']}s, removed {result['removedSeconds']}s"
+            f"{levelled})"
         )
     if stage == "matte":
         stats = result["stats"]
@@ -225,6 +247,10 @@ def main(argv: list[str] | None = None) -> int:
         "assets": (lambda: stage_assets.run(config, paths, source), paths.asset_manifest),
         "transcribe": (lambda: s02_transcribe.run(config, paths), paths.transcript),
         "silence": (lambda: s03_silence.run(config, paths), paths.silence),
+        "recover": (
+            lambda: s03b_recover.run(config, paths),
+            paths.data / "03b-recovered.json",
+        ),
         "edl": (lambda: s04_edl.run(config, paths), paths.edl),
         "report": (lambda: s05_report.run(config, paths), paths.review_report),
         "track": (lambda: s06_face_track.run(config, paths), paths.face_track),

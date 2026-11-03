@@ -303,6 +303,74 @@ def align_audio(
     return destination
 
 
+def measure_loudness(config: dict, source: Path) -> dict[str, float]:
+    """EBU R128 loudness of a file, via ffmpeg's loudnorm analysis pass."""
+    settings = get(config, "output.loudness", {})
+    proc = subprocess.run(
+        [
+            str(ffmpeg_bin(config)),
+            "-hide_banner", "-nostdin",
+            "-i", str(source),
+            "-af",
+            f"loudnorm=I={settings.get('targetI', -14)}"
+            f":TP={settings.get('truePeak', -1.5)}"
+            f":LRA={settings.get('lra', 11)}:print_format=json",
+            "-f", "null", "-",
+        ],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    if proc.returncode != 0:
+        tail = "\n".join((proc.stderr or "").strip().splitlines()[-20:])
+        raise MediaToolError(
+            f"Loudness analysis failed (exit {proc.returncode}):\n{tail}"
+        )
+
+    blob = re.search(r"\{[^{}]*input_i[^{}]*\}", proc.stderr or "", re.S)
+    if not blob:
+        raise MediaToolError(f"loudnorm printed no measurement for {source}")
+    raw = json.loads(blob.group(0))
+    return {key: float(raw[key]) for key in
+            ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")}
+
+
+def normalise_loudness(
+    config: dict, source: Path, destination: Path, measured: dict[str, float]
+) -> Path:
+    """Apply the measured correction. Video is copied, never re-encoded.
+
+    Two passes, not one. A single-pass loudnorm works dynamically and pumps
+    the quiet parts of speech up and down as it goes; feeding it the measured
+    values lets it apply one steady correction instead. linear=true keeps that
+    correction a plain gain wherever the true-peak ceiling allows it.
+    """
+    settings = get(config, "output.loudness", {})
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    run(
+        [
+            str(ffmpeg_bin(config)),
+            "-hide_banner", "-nostdin", "-y",
+            "-i", str(source),
+            "-af",
+            f"loudnorm=I={settings.get('targetI', -14)}"
+            f":TP={settings.get('truePeak', -1.5)}"
+            f":LRA={settings.get('lra', 11)}"
+            f":measured_I={measured['input_i']}"
+            f":measured_TP={measured['input_tp']}"
+            f":measured_LRA={measured['input_lra']}"
+            f":measured_thresh={measured['input_thresh']}"
+            f":offset={measured['target_offset']}"
+            ":linear=true:print_format=summary",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", str(settings.get("audioBitrate", "192k")),
+            "-movflags", "+faststart",
+            str(destination),
+        ],
+        timeout=3600,
+    )
+    return destination
+
+
 _SILENCE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
 _SILENCE_END = re.compile(r"silence_end:\s*(-?[\d.]+)")
 

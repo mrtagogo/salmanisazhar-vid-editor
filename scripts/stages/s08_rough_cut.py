@@ -34,6 +34,10 @@ from .s04_edl import STATUS_AUTO, STATUS_REVIEW, _build_plan, cutting_profile
 
 SCHEMA = "tadabbur-motion/rough-cut@1"
 
+# Above this, a lossy re-encode downstream can push the signal over full
+# scale. Below it, a small overshoot of the configured ceiling is harmless.
+CLIPPING_RISK_DBTP = -0.5
+
 
 class ApprovalError(RuntimeError):
     """Raised when the EDL has not been approved by a human."""
@@ -127,6 +131,21 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
         timeout=7200,
     )
 
+    # Levelling comes AFTER cutting, and is measured on the cut rather than on
+    # the source. That was checked rather than assumed: removing the pauses
+    # from the first real recording moved its integrated loudness by 2.80 LU,
+    # so a correction computed from the source would have landed nearly 3 LU
+    # off. Video is copied, never re-encoded.
+    loudness = get(config, "output.loudness", {})
+    before: dict[str, float] | None = None
+    after: dict[str, float] | None = None
+    if loudness.get("enabled", True):
+        before = media.measure_loudness(config, paths.rough_cut)
+        levelled = paths.rough_cut.with_name("rough-cut.levelled.mp4")
+        media.normalise_loudness(config, paths.rough_cut, levelled, before)
+        levelled.replace(paths.rough_cut)
+        after = media.measure_loudness(config, paths.rough_cut)
+
     # Trust the file, not the arithmetic: probe what was actually written.
     probe = media.probe(config, paths.rough_cut)
     actual = float(probe["format"].get("duration") or 0.0)
@@ -135,6 +154,26 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
     )
 
     warnings = list(plan.get("warnings") or [])
+
+    if after is not None:
+        target = float(loudness.get("targetI", -14))
+        ceiling = float(loudness.get("truePeak", -1.5))
+        if abs(after["input_i"] - target) > 1.0:
+            warnings.append(
+                f"Levelled to {after['input_i']:.1f} LUFS, {abs(after['input_i'] - target):.1f} "
+                f"LU from the {target} LUFS target. Very wide dynamics can stop loudnorm "
+                "reaching a target without squashing the speech."
+            )
+        # loudnorm in linear mode applies one steady gain and limits peaks only
+        # approximately, so landing a few tenths above the ceiling is normal and
+        # harmless. What is worth a warning is getting close to full scale,
+        # where a lossy re-encode downstream can push it over.
+        if after["input_tp"] > CLIPPING_RISK_DBTP:
+            warnings.append(
+                f"True peak is {after['input_tp']:.1f} dBTP, close enough to full scale "
+                f"that a re-encode downstream could clip. Lower output.loudness.truePeak."
+            )
+
     drift = abs(actual - kept)
     if drift > 0.5:
         warnings.append(
@@ -150,6 +189,19 @@ def run(config: dict, paths: ProjectPaths) -> dict[str, Any]:
         "source": metadata["source"],
         "roughCut": str(paths.rough_cut),
         "soundFrom": str(sound),
+        "loudness": (
+            None
+            if before is None or after is None
+            else {
+                "targetI": loudness.get("targetI", -14),
+                "truePeak": loudness.get("truePeak", -1.5),
+                "beforeI": rounded(before["input_i"], 2),
+                "beforeTruePeak": rounded(before["input_tp"], 2),
+                "afterI": rounded(after["input_i"], 2),
+                "afterTruePeak": rounded(after["input_tp"], 2),
+                "gainApplied": rounded(after["input_i"] - before["input_i"], 2),
+            }
+        ),
         "sourceDurationSeconds": rounded(duration),
         "expectedDurationSeconds": rounded(kept),
         "actualDurationSeconds": rounded(actual),
