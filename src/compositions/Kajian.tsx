@@ -28,6 +28,8 @@ export type Cue = {
   words: { w: string; start: number; end: number }[];
   suspected: string[];
   protected: string[];
+  /** True only when the text might be unverified scripture. */
+  withhold?: boolean;
 };
 
 export type ProjectData = {
@@ -147,7 +149,10 @@ export const Kajian: React.FC<KajianProps> = ({ data, showWithheld = false }) =>
 
   let caption: React.ReactNode = null;
   if (cue) {
-    const flagged = cue.suspected.length > 0 || cue.protected.length > 0;
+    // Only scripture is withheld. A span merely suspected of holding extra
+    // unheard sound still gets its subtitle: the words that were written
+    // are not in doubt.
+    const flagged = cue.withhold ?? cue.protected.length > 0;
     const o: FxSpec = {
       fx: 'kinetic-caption',
       start: cue.start,

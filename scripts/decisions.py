@@ -27,6 +27,7 @@ import sys
 from typing import Any
 
 from .lib.config import cutting_profile, load_config
+from .lib import retime
 from .lib.jsonio import read_json, utc_now, write_json
 from .lib.paths import PROJECTS_DIR
 
@@ -278,6 +279,83 @@ def as_trim(proposal: dict, profile: dict) -> None:
     )
 
 
+def parse_clock(text: str) -> float:
+    """Accept 12.5, 1:02, 01:59.13 — the forms a person actually types."""
+    text = text.strip()
+    if ":" not in text:
+        return float(text)
+    minutes, seconds = text.rsplit(":", 1)
+    return int(minutes) * 60 + float(seconds)
+
+
+def add_manual(slug: str, span: str, on_cut: bool, by: str) -> int:
+    """Add a cut the engine never proposed.
+
+    Until now the sheet could only offer what the analysis found. A person
+    watching the result will want a span gone that no rule suggested, and
+    there was no way in.
+
+    A span given on the CUT's timeline is mapped back to the source, because
+    cutting an already-cut file would re-encode it a second time and put the
+    timings on yet another clock. One cut, always from the original.
+    """
+    data = PROJECTS_DIR / slug / "data"
+    edl = read_json(data / "04-edl.json")
+
+    low, high = (parse_clock(x) for x in span.split("-", 1))
+    if high <= low:
+        raise SystemExit(f"Empty or reversed span: {span}")
+
+    if on_cut:
+        cut_file = data / "08-rough-cut.json"
+        if not cut_file.is_file():
+            raise SystemExit(
+                f"No rough cut for {slug!r}, so a cut-timeline span cannot be "
+                "mapped back. Give the span on the source timeline instead."
+            )
+        keep_ranges = read_json(cut_file)["keepRanges"]
+        source_low = retime.to_source(keep_ranges, low)
+        source_high = retime.to_source(keep_ranges, max(low, high - 1e-3))
+        if source_low is None or source_high is None:
+            raise SystemExit(f"{span} falls outside the cut.")
+        low, high = source_low, source_high
+
+    existing = sum(1 for p in edl["proposals"] if p.get("kind") == "manual")
+    proposal = {
+        "id": f"man-{existing + 1:04d}",
+        "kind": "manual",
+        "start": round(low, 3),
+        "end": round(high, 3),
+        "durationSeconds": round(high - low, 3),
+        "action": "cut",
+        "status": "auto",
+        "reason": (
+            f"Asked for by hand: {span}"
+            + (" on the cut's timeline, mapped back to the source." if on_cut else ".")
+        ),
+        "evidence": {"askedFor": span, "onCutTimeline": on_cut, "by": by},
+    }
+
+    clash = [
+        r
+        for r in edl.get("protectedRegions", [])
+        if proposal["end"] > r["start"] and proposal["start"] < r["end"]
+    ]
+    if clash:
+        raise SystemExit(
+            f"That span overlaps protected speech ({clash[0]['id']}: "
+            f"{clash[0]['text'][:40]!r}). Refused."
+        )
+
+    edl["proposals"].append(proposal)
+    edl["proposals"].sort(key=lambda p: float(p["start"]))
+    write_json(data / "04-edl.json", edl)
+    print(f"added {proposal['id']}: source {proposal['start']:.2f}-{proposal['end']:.2f}s "
+          f"({proposal['durationSeconds']:.2f}s)")
+    print("The decision sheet is now stale; re-make it before applying numbers.")
+    return 0
+
+
 def apply(
     slug: str, cut: list[int], keep: list[int], by: str, override: bool = False
 ) -> int:
@@ -364,6 +442,18 @@ def main(argv: list[str] | None = None) -> int:
     maker = sub.add_parser("make", help="Write the numbered sheet.")
     maker.add_argument("--slug", required=True)
 
+    adder = sub.add_parser("add", help="Add a cut the engine never proposed.")
+    adder.add_argument("--slug", required=True)
+    adder.add_argument(
+        "--span", required=True, help='e.g. "01:59.13-02:04.73"'
+    )
+    adder.add_argument(
+        "--source",
+        action="store_true",
+        help="The span is on the SOURCE timeline (default: the cut's).",
+    )
+    adder.add_argument("--by", default="presenter")
+
     applier = sub.add_parser("apply", help="Apply an answer and approve the EDL.")
     applier.add_argument("--slug", required=True)
     applier.add_argument("--cut", help="Numbers to cut, e.g. 1,3,5-8")
@@ -381,6 +471,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "make":
         return make(args.slug)
+    if args.command == "add":
+        return add_manual(args.slug, args.span, not args.source, args.by)
     return apply(
         args.slug,
         parse_numbers(args.cut),

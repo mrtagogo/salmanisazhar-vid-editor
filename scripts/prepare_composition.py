@@ -67,6 +67,19 @@ def build_cues(transcript: dict, edl: dict, keep_ranges: list[dict]) -> list[dic
             overlaps = lambda rs: [  # noqa: E731
                 r["id"] for r in rs if end > r["start"] and start < r["end"]
             ]
+            hit_protected = overlaps(protected)
+            # Withholding exists to keep UNVERIFIED SCRIPTURE off the screen.
+            # An untranscribed_speech suspicion says something extra was said
+            # in this span that nobody wrote down — it says nothing about the
+            # words that WERE written, and suppressing a perfectly good
+            # subtitle because of it just leaves the viewer with silence.
+            scripture = [
+                r["id"]
+                for r in suspected
+                if end > r["start"]
+                and start < r["end"]
+                and r.get("reason") == "possible_transliterated_scripture"
+            ]
             cues.append(
                 {
                     "start": round(start, 3),
@@ -83,7 +96,8 @@ def build_cues(transcript: dict, edl: dict, keep_ranges: list[dict]) -> list[dic
                     # Carried through so the composition can refuse to
                     # decorate something that may be scripture.
                     "suspected": overlaps(suspected),
-                    "protected": overlaps(protected),
+                    "protected": hit_protected,
+                    "withhold": bool(hit_protected or scripture),
                 }
             )
     # A protected or suspected span with no words of its own would otherwise
@@ -106,6 +120,8 @@ def build_cues(transcript: dict, edl: dict, keep_ranges: list[dict]) -> list[dic
                 "words": [],
                 "suspected": [region["id"]] if region in suspected else [],
                 "protected": [region["id"]] if region in protected else [],
+                "withhold": region in protected
+                or region.get("reason") == "possible_transliterated_scripture",
             }
         )
 
@@ -125,13 +141,14 @@ STATIC_STRETCH_SECONDS = 14.0
 PUSH_ZOOM = 1.10
 
 # A pause this long was the speaker taking a beat before making a point, so
-# the line after it is worth leaning into.
-BEAT_SECONDS = 5.0
+# the line after it is worth leaning into. Loosened at the presenter's
+# request: one punch-in in two minutes read as nothing happening.
+BEAT_SECONDS = 2.5
 PUNCH_ZOOM = 1.18
 PUNCH_SECONDS = 1.8
 # Caps, so "a punch-in where he made a point" cannot become a tic.
-MAX_PUNCHES = 4
-PUNCH_SPACING_SECONDS = 15.0
+MAX_PUNCHES = 9
+PUNCH_SPACING_SECONDS = 8.0
 
 
 def plan_effects(keep_ranges: list[dict], duration: float) -> list[dict[str, Any]]:
@@ -158,13 +175,19 @@ def plan_effects(keep_ranges: list[dict], duration: float) -> list[dict[str, Any
     # Punch-ins first: where they overlap a push, the punch should win, and
     # the stage takes the first camera effect it finds.
     effects: list[dict[str, Any]] = []
-    last = -PUNCH_SPACING_SECONDS
+    chosen: list[float] = []
+    # Strongest beats first, so the best moments win the spacing budget.
     for join in sorted(joins, key=lambda j: -j["removed"]):
         if len(effects) >= MAX_PUNCHES:
             break
         if join["removed"] < BEAT_SECONDS:
             break
-        if join["at"] - last < PUNCH_SPACING_SECONDS or join["at"] + PUNCH_SECONDS > duration:
+        # Distance to EVERY punch already chosen, not just the last one added.
+        # Comparing against the last added fails for anything earlier in time,
+        # where the difference is negative and always looks too close.
+        if any(abs(join["at"] - at) < PUNCH_SPACING_SECONDS for at in chosen):
+            continue
+        if join["at"] + PUNCH_SECONDS > duration:
             continue
         effects.append(
             {
@@ -176,15 +199,29 @@ def plan_effects(keep_ranges: list[dict], duration: float) -> list[dict[str, Any
                 "parallax": 0.5,
             }
         )
-        last = join["at"]
+        chosen.append(join["at"])
     effects.sort(key=lambda e: e["start"])
 
-    taken = [(e["start"], e["end"]) for e in effects]
+    taken = sorted((e["start"], e["end"]) for e in effects)
     edges = [0.0] + [j["at"] for j in joins] + [duration]
+
+    # A stretch is split AROUND the punches inside it rather than abandoned.
+    # A 1.8s punch should not cancel a fifteen-second push; it should divide
+    # it, so the frame still moves either side instead of sitting dead.
+    stretches: list[tuple[float, float]] = []
     for low, high in zip(edges, edges[1:]):
+        cursor = low
+        for a, b in taken:
+            if b <= cursor or a >= high:
+                continue
+            if a - cursor > 0:
+                stretches.append((cursor, min(a, high)))
+            cursor = max(cursor, b)
+        if high - cursor > 0:
+            stretches.append((cursor, high))
+
+    for low, high in stretches:
         if high - low < STATIC_STRETCH_SECONDS:
-            continue
-        if any(a < high and low < b for a, b in taken):
             continue
         effects.append(
             {
