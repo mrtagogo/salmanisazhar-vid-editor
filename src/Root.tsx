@@ -59,6 +59,9 @@ export const RemotionRoot: React.FC = () => {
             fps: data.fps,
             width: data.width,
             height: data.height,
+            // Hand the loaded project straight to the component, so it never
+            // fetches anything itself.
+            props: { ...props, data },
           };
         }}
       />

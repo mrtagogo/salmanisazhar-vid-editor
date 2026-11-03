@@ -11,13 +11,10 @@
  * two places is how the two drift apart.
  */
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   AbsoluteFill,
   OffthreadVideo,
-  cancelRender,
-  continueRender,
-  delayRender,
   staticFile,
   useCurrentFrame,
   useVideoConfig,
@@ -59,20 +56,6 @@ export const loadProject = (slug: string): Promise<ProjectData> =>
     }
     return r.json() as Promise<ProjectData>;
   });
-
-function useProject(slug: string): ProjectData | null {
-  const [data, setData] = useState<ProjectData | null>(null);
-  const [handle] = useState(() => delayRender(`loading project ${slug}`));
-  useEffect(() => {
-    loadProject(slug)
-      .then((d) => {
-        setData(d);
-        continueRender(handle);
-      })
-      .catch((err) => cancelRender(err));
-  }, [slug, handle]);
-  return data;
-}
 
 /** The face at this frame, in pixels, or a centred fallback. */
 function faceAtFrame(data: ProjectData, frame: number) {
@@ -119,13 +102,26 @@ const Withheld: React.FC<{ c: FxCtx; reason: string }> = ({ c, reason }) => (
   </div>
 );
 
-export const Kajian: React.FC<{ slug: string; showWithheld?: boolean }> = ({
-  slug,
-  showWithheld = true,
-}) => {
+export type KajianProps = {
+  /** Which prepared project to show. */
+  slug: string;
+  showWithheld?: boolean;
+  /**
+   * Filled in by calculateMetadata, not by hand.
+   *
+   * The data used to be fetched inside the component, behind delayRender.
+   * That rendered stills correctly but showed nothing at all in the Studio:
+   * the component sat on its placeholder while the metadata pass had already
+   * loaded the same file successfully. Fetching in two places meant one of
+   * them could be wrong on its own. Now there is one fetch, at metadata time,
+   * and the component is a pure function of its props.
+   */
+  data?: ProjectData;
+};
+
+export const Kajian: React.FC<KajianProps> = ({ data, showWithheld = true }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
-  const data = useProject(slug);
 
   if (!data) return <AbsoluteFill style={{ backgroundColor: THEME.bg }} />;
 

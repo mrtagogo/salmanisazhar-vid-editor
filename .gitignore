@@ -37,3 +37,6 @@ desktop.ini
 
 # Media prepared for Remotion: proxies, regenerable from projects/
 public/
+
+# Local tooling config
+.claude/
