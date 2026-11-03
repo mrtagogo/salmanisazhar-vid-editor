@@ -26,6 +26,7 @@ import argparse
 import sys
 from typing import Any
 
+from .lib.config import cutting_profile, load_config
 from .lib.jsonio import read_json, utc_now, write_json
 from .lib.paths import PROJECTS_DIR
 
@@ -234,7 +235,52 @@ def parse_numbers(text: str | None) -> list[int]:
     return out
 
 
-def apply(slug: str, cut: list[int], keep: list[int], by: str) -> int:
+def as_trim(proposal: dict, profile: dict) -> None:
+    """Turn a refused pause into an actual trim, in place.
+
+    A refused pause is recorded with action "keep" and spans the WHOLE gap,
+    because it was never meant to be removed. Flipping only its status leaves
+    an entry the plan ignores — the override would appear to work and remove
+    nothing.
+
+    Converting it has to keep the house rule that dead air is shortened and
+    never erased, so the same arithmetic the ordinary pause rule uses is
+    applied here: leave air at each edge rather than butting the two words
+    together.
+    """
+    if proposal.get("kind") != "pause" or proposal.get("action") != "keep":
+        return
+
+    keep_air = float(profile.get("keepPauseSeconds", 0.6))
+    padding = float(profile.get("edgePaddingSeconds", 0.08))
+    position = (proposal.get("evidence") or {}).get("position", "interior")
+    start, end = float(proposal["start"]), float(proposal["end"])
+
+    if position == "leading":
+        low, high = start, end - max(keep_air, padding)
+    elif position == "trailing":
+        low, high = start + max(keep_air, padding), end
+    else:
+        low = start + max(keep_air / 2, padding)
+        high = end - max(keep_air / 2, padding)
+
+    if high - low <= 0:
+        return
+
+    proposal["action"] = "trim"
+    proposal["start"] = round(low, 3)
+    proposal["end"] = round(high, 3)
+    proposal["durationSeconds"] = round(high - low, 3)
+    proposal["reason"] = (
+        proposal["reason"].rstrip()
+        + f" Overridden on the decision sheet; trimmed to {high - low:.2f}s, "
+        "leaving air at both edges."
+    )
+
+
+def apply(
+    slug: str, cut: list[int], keep: list[int], by: str, override: bool = False
+) -> int:
     data = PROJECTS_DIR / slug / "data"
     edl_path = data / "04-edl.json"
     edl = read_json(edl_path)
@@ -259,14 +305,19 @@ def apply(slug: str, cut: list[int], keep: list[int], by: str) -> int:
     by_id = {p["id"]: p for p in edl["proposals"]}
     decided: list[str] = []
 
+    overridden: list[str] = []
     for n in cut:
         proposal = by_id[numbers[str(n)]]
         if proposal["status"] == "blocked":
-            print(
-                f"  {n} ({proposal['id']}): the engine refuses this one; left alone.",
-                file=sys.stderr,
-            )
-            continue
+            if not override:
+                print(
+                    f"  {n} ({proposal['id']}): the engine refuses this one; left alone. "
+                    "Pass --override if you have listened to it.",
+                    file=sys.stderr,
+                )
+                continue
+            overridden.append(f"{n} ({proposal['id']})")
+            as_trim(proposal, cutting_profile(load_config()))
         proposal["status"] = "auto"
         decided.append(f"cut {n}")
 
@@ -290,12 +341,17 @@ def apply(slug: str, cut: list[int], keep: list[int], by: str) -> int:
             "approvedBy": by,
             "approvedAt": utc_now(),
             "decisionSheet": str(PROJECTS_DIR / slug / "review" / SHEET),
+            # Recorded, not merely done: these are cuts the engine had
+            # refused and a person chose to make anyway.
+            "overrodeEngineRefusals": overridden,
         }
     )
     write_json(edl_path, edl)
 
     will_cut = sum(1 for p in edl["proposals"] if p["status"] == "auto")
     print(f"approved: {', '.join(decided) or 'nothing named'}")
+    if overridden:
+        print(f"overrode engine refusals: {', '.join(overridden)}")
     print(f"will cut: {will_cut} proposal(s)")
     print(f"next    : python -m scripts.run_analysis --slug {slug} --only cut --input ...")
     return 0
@@ -313,11 +369,25 @@ def main(argv: list[str] | None = None) -> int:
     applier.add_argument("--cut", help="Numbers to cut, e.g. 1,3,5-8")
     applier.add_argument("--keep", help="Numbers to keep.")
     applier.add_argument("--by", default="presenter", help="Who decided.")
+    applier.add_argument(
+        "--override",
+        action="store_true",
+        help=(
+            "Apply cuts the engine had refused. Only for spans a person has "
+            "actually listened to; the refusal exists because something is there."
+        ),
+    )
 
     args = parser.parse_args(argv)
     if args.command == "make":
         return make(args.slug)
-    return apply(args.slug, parse_numbers(args.cut), parse_numbers(args.keep), args.by)
+    return apply(
+        args.slug,
+        parse_numbers(args.cut),
+        parse_numbers(args.keep),
+        args.by,
+        override=args.override,
+    )
 
 
 if __name__ == "__main__":
